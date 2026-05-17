@@ -1,0 +1,33 @@
+const express = require('express');
+const router  = express.Router();
+
+const {
+  signup,
+  login,
+  phoneAuth,
+  sendMockOtp,
+  verifyMockOtp,
+  getMe,
+} = require('../controllers/authController');
+
+const { protect } = require('../middleware/authMiddleware');
+
+// Standard credential routes
+router.post('/signup', signup);
+router.post('/login',  login);
+
+// ── Firebase Phone OTP (primary) ─────────────────────────────────────────────
+// Frontend: signInWithPhoneNumber → confirmationResult.confirm(otp) → idToken
+// This endpoint verifies the idToken with Firebase Admin and returns a JWT.
+router.post('/phone-auth', phoneAuth);
+
+// ── Mock OTP routes (development fallback) ───────────────────────────────────
+// Use when Firebase Admin credentials are not yet configured.
+// Remove or disable these in production.
+router.post('/send-otp',   sendMockOtp);
+router.post('/verify-otp', verifyMockOtp);
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get('/me', protect, getMe);
+
+module.exports = router;
