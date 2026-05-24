@@ -41,7 +41,7 @@ const getVenueById = async (req, res) => {
 const createVenue = async (req, res) => {
   try {
     // Add user as ownerId
-    req.body.ownerId = req.user.id;
+    req.body.ownerId = req.user.playNowId;
 
     const venue = await Venue.create(req.body);
     res.status(201).json(venue);
@@ -62,7 +62,7 @@ const updateVenue = async (req, res) => {
     }
 
     // Make sure user is venue owner or admin
-    if (venue.ownerId.toString() !== req.user.id && req.user.role !== 'admin') {
+    if (venue.ownerId.toString() !== req.user.playNowId && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to update this venue' });
     }
 
@@ -89,7 +89,7 @@ const deleteVenue = async (req, res) => {
     }
 
     // Make sure user is venue owner or admin
-    if (venue.ownerId.toString() !== req.user.id && req.user.role !== 'admin') {
+    if (venue.ownerId.toString() !== req.user.playNowId && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to delete this venue' });
     }
 
@@ -105,7 +105,7 @@ const deleteVenue = async (req, res) => {
 // @access  Private/Owner
 const getMyVenues = async (req, res) => {
   try {
-    const venues = await Venue.find({ ownerId: req.user.id });
+    const venues = await Venue.find({ ownerId: req.user.playNowId });
     res.json(venues);
   } catch (error) {
     res.status(500).json({ message: error.message });

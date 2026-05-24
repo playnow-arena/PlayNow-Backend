@@ -70,7 +70,7 @@ const createBooking = async (req, res) => {
 
     // 5. Create Booking
     const booking = await Booking.create({
-      userId: req.user.id,
+      userId: req.user.playNowId,
       venueId,
       slotIds,
       totalAmount,
@@ -108,7 +108,7 @@ const createBooking = async (req, res) => {
 // @access  Private
 const getMyBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find({ userId: req.user.id })
+    const bookings = await Booking.find({ userId: req.user.playNowId })
       .populate('venueId', 'name location')
       .populate('slotIds', 'date startTime endTime price status');
     
@@ -124,7 +124,7 @@ const getMyBookings = async (req, res) => {
 const getOwnerBookings = async (req, res) => {
   try {
     // Find venues owned by this user
-    const venues = await Venue.find({ ownerId: req.user.id }).select('_id');
+    const venues = await Venue.find({ ownerId: req.user.playNowId }).select('_id');
     const venueIds = venues.map(v => v._id);
 
     const bookings = await Booking.find({ venueId: { $in: venueIds } })
@@ -150,7 +150,7 @@ const cancelBooking = async (req, res) => {
     }
 
     // Ensure user is the one who booked it
-    if (booking.userId.toString() !== req.user.id) {
+    if (booking.userId.toString() !== req.user.playNowId) {
       return res.status(403).json({ message: 'Not authorized to cancel this booking' });
     }
 

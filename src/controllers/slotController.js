@@ -38,7 +38,7 @@ const createSlots = async (req, res) => {
       return res.status(404).json({ message: 'Venue not found' });
     }
 
-    if (venue.ownerId.toString() !== req.user.id && req.user.role !== 'admin') {
+    if (venue.ownerId.toString() !== req.user.playNowId && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -70,7 +70,7 @@ const blockSlot = async (req, res) => {
       return res.status(404).json({ message: 'Slot not found' });
     }
 
-    if (slot.venueId.ownerId.toString() !== req.user.id && req.user.role !== 'admin') {
+    if (slot.venueId.ownerId.toString() !== req.user.playNowId && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -168,7 +168,7 @@ const emergencyClose = async (req, res) => {
       return res.status(404).json({ message: 'Venue not found' });
     }
 
-    if (venue.ownerId.toString() !== req.user.id && req.user.role !== 'admin') {
+    if (venue.ownerId.toString() !== req.user.playNowId && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -189,7 +189,7 @@ const emergencyClose = async (req, res) => {
     io.to(`venue_${venueId}`).emit('venueStatusChanged', { venueId, isActive: false, status: 'emergency_closed' });
     
     // Also notify owner room if needed (though they triggered it)
-    io.to(`owner_${req.user.id}`).emit('venueStatusChanged', { venueId, isActive: false });
+    io.to(`owner_${req.user.playNowId}`).emit('venueStatusChanged', { venueId, isActive: false });
 
     res.json({ message: 'Venue closed in emergency mode', affectedSlots: result.modifiedCount });
   } catch (error) {

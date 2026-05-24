@@ -24,6 +24,7 @@ app.use('/api/auth', require('./src/routes/authRoutes'));
 app.use('/api/venues', require('./src/routes/venueRoutes'));
 app.use('/api/slots', require('./src/routes/slotRoutes'));
 app.use('/api/bookings', require('./src/routes/bookingRoutes'));
+app.use('/api/matches', require('./src/routes/matchRoutes'));
 
 app.get('/', (req, res) => {
   res.send('Play Now API is running...');
