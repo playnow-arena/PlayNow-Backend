@@ -242,6 +242,34 @@ const getMe = async (req, res) => {
   }
 };
 
+// @desc    Update user profile
+// @route   PUT /api/auth/profile
+// @access  Private
+const updateProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.name = req.body.name || user.name;
+
+    const updatedUser = await user.save();
+
+    res.json({
+      _id: updatedUser._id,
+      name: updatedUser.name,
+      phone: updatedUser.phone,
+      playNowId: updatedUser.playNowId,
+      role: updatedUser.role,
+      token: generateToken(updatedUser._id),
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 module.exports = {
   signup,
   login,
@@ -249,4 +277,5 @@ module.exports = {
   sendMockOtp,
   verifyMockOtp,
   getMe,
+  updateProfile,
 };
