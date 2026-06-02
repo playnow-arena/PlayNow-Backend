@@ -254,6 +254,10 @@ const updateProfile = async (req, res) => {
     }
 
     user.name = req.body.name || user.name;
+    user.username = req.body.username || user.username;
+user.bio = req.body.bio || user.bio;
+user.favoriteSport = req.body.favoriteSport || user.favoriteSport;
+user.location = req.body.location || user.location;
 
     const updatedUser = await user.save();
 
@@ -264,6 +268,10 @@ const updateProfile = async (req, res) => {
   playNowId: updatedUser.playNowId,
   role: updatedUser.role,
   token: generateToken(updatedUser._id),
+  username: updatedUser.username,
+bio: updatedUser.bio,
+favoriteSport: updatedUser.favoriteSport,
+location: updatedUser.location,
 });
 
   } catch (error) {
@@ -273,7 +281,7 @@ const updateProfile = async (req, res) => {
 
 const updateProfileByPhone = async (req, res) => {
   try {
-    const { phone, name } = req.body;
+   const { phone, name, username, bio, favoriteSport, location } = req.body;
 
     if (!phone || !name) {
       return res.status(400).json({ message: 'Phone and name are required' });
@@ -289,6 +297,10 @@ const updateProfileByPhone = async (req, res) => {
     }
 
     user.name = name.trim();
+    user.username = username || user.username;
+user.bio = bio || user.bio;
+user.favoriteSport = favoriteSport || user.favoriteSport;
+user.location = location || user.location;
     const updatedUser = await user.save();
 
     res.json({
@@ -298,6 +310,10 @@ const updateProfileByPhone = async (req, res) => {
       playNowId: updatedUser.playNowId,
       role: updatedUser.role,
       token: generateToken(updatedUser._id),
+      username: updatedUser.username,
+bio: updatedUser.bio,
+favoriteSport: updatedUser.favoriteSport,
+location: updatedUser.location,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
