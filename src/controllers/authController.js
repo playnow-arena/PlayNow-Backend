@@ -59,13 +59,13 @@ const signup = async (req, res) => {
 
     if (user) {
       res.status(201).json({
-        _id: user.playNowId,
+        _id: user._id,
         name: user.name,
         email: user.email,
         phone: user.phone,
         playNowId: user.playNowId,
         role: user.role,
-        token: generateToken(user.playNowId),
+        token: generateToken(user._id),
       });
     } else {
       res.status(400).json({ message: 'Invalid user data' });
@@ -100,14 +100,14 @@ const login = async (req, res) => {
 
     if (user && (await user.matchPassword(password))) {
       res.json({
-        _id: user.playNowId,
+        _id: user._id,
         name: user.name,
         email: user.email,
         phone: user.phone,
         playNowId: user.playNowId,
         ownerId: user.ownerId,
         role: user.role, // Use role instead of roles if model uses singular
-        token: generateToken(user.playNowId),
+        token: generateToken(user._id),
       });
     } else {
       res.status(401).json({ message: 'Invalid credentials' });
@@ -167,14 +167,14 @@ const phoneAuth = async (req, res) => {
     }
 
     res.json({
-      _id:       user.playNowId,
-      name:      user.name,
-      phone:     user.phone,
-      playNowId: user.playNowId,
-      role:      user.role,
-      isNewUser,
-      token:     generateToken(user.playNowId),
-    });
+  _id: user._id,
+  name: user.name,
+  phone: user.phone,
+  playNowId: user.playNowId,
+  role: user.role,
+  isNewUser,
+  token: generateToken(user._id),
+});
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -224,7 +224,7 @@ const verifyMockOtp = async (req, res) => {
       const playNowId = await generatePlayNowId();
       user = await User.create({ name: name ? name.trim() : `Player_${playNowId.split('-')[1]}`, phone: formattedPhone, playNowId, profilePhoto: 'default.jpg', role: 'player' });
     }
-    res.json({ _id: user.playNowId, name: user.name, phone: user.phone, playNowId: user.playNowId, role: user.role, isNewUser, token: generateToken(user.playNowId) });
+    res.json({ _id: user._id, name: user.name, phone: user.phone, playNowId: user.playNowId, role: user.role, isNewUser, token: generateToken(user._id) });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -247,7 +247,7 @@ const getMe = async (req, res) => {
 // @access  Private
 const updateProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.playNowId);
+   const user = await User.findOne({ playNowId: req.user.playNowId });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -257,15 +257,48 @@ const updateProfile = async (req, res) => {
 
     const updatedUser = await user.save();
 
+   res.json({
+  _id: updatedUser._id,
+  name: updatedUser.name,
+  phone: updatedUser.phone,
+  playNowId: updatedUser.playNowId,
+  role: updatedUser.role,
+  token: generateToken(updatedUser._id),
+});
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const updateProfileByPhone = async (req, res) => {
+  try {
+    const { phone, name } = req.body;
+
+    if (!phone || !name) {
+      return res.status(400).json({ message: 'Phone and name are required' });
+    }
+
+    const digits = String(phone).replace(/\D/g, '').slice(-10);
+    const formattedPhone = `+91${digits}`;
+
+    const user = await User.findOne({ phone: formattedPhone });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.name = name.trim();
+    const updatedUser = await user.save();
+
     res.json({
-      _id: updateduser.playNowId,
+      _id: updatedUser._id,
       name: updatedUser.name,
       phone: updatedUser.phone,
       playNowId: updatedUser.playNowId,
       role: updatedUser.role,
-      token: generateToken(updateduser.playNowId),
+      token: generateToken(updatedUser._id),
     });
-
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -278,4 +311,5 @@ module.exports = {
   verifyMockOtp,
   getMe,
   updateProfile,
+  updateProfileByPhone,
 };
