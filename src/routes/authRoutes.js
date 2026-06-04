@@ -9,6 +9,7 @@ const {
   verifyMockOtp,
   getMe,
   updateProfile,
+  updateProfileByPhone,
 } = require('../controllers/authController');
 
 const { protect } = require('../middleware/authMiddleware');
@@ -32,5 +33,5 @@ router.post('/verify-otp', verifyMockOtp);
 router.get('/me', protect, getMe);
 
 router.put('/profile', protect, updateProfile);
-
+router.put('/profile-by-phone', updateProfileByPhone);
 module.exports = router;
