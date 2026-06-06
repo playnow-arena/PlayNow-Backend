@@ -38,7 +38,7 @@ const createSlots = async (req, res) => {
       return res.status(404).json({ message: 'Venue not found' });
     }
 
-    if (venue.ownerId.toString() !== req.user.playNowId && req.user.role !== 'admin') {
+    if (venue.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -70,7 +70,7 @@ const blockSlot = async (req, res) => {
       return res.status(404).json({ message: 'Slot not found' });
     }
 
-    if (slot.venueId.ownerId.toString() !== req.user.playNowId && req.user.role !== 'admin') {
+    if (slot.venueId.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -168,7 +168,7 @@ const emergencyClose = async (req, res) => {
       return res.status(404).json({ message: 'Venue not found' });
     }
 
-    if (venue.ownerId.toString() !== req.user.playNowId && req.user.role !== 'admin') {
+    if (venue.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 

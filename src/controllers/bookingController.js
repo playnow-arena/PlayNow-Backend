@@ -124,7 +124,7 @@ const getMyBookings = async (req, res) => {
 const getOwnerBookings = async (req, res) => {
   try {
     // Find venues owned by this user
-    const venues = await Venue.find({ ownerId: req.user.playNowId }).select('_id');
+    const venues = await Venue.find({ ownerId: req.user._id }).select('_id');
     const venueIds = venues.map(v => v._id);
 
     const bookings = await Booking.find({ venueId: { $in: venueIds } })
