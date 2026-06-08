@@ -70,7 +70,7 @@ const createBooking = async (req, res) => {
 
     // 5. Create Booking
     const booking = await Booking.create({
-      userId: req.user.playNowId,
+      userId: req.user._id,
       venueId,
       slotIds,
       totalAmount,
@@ -108,7 +108,7 @@ const createBooking = async (req, res) => {
 // @access  Private
 const getMyBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find({ userId: req.user.playNowId })
+    const bookings = await Booking.find({ userId: req.user._id })
       .populate('venueId', 'name location')
       .populate('slotIds', 'date startTime endTime price status');
     
