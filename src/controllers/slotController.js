@@ -31,7 +31,7 @@ const getSlotsByVenue = async (req, res) => {
 // @access  Private/Owner
 const createSlots = async (req, res) => {
   try {
-    const { venueId, date, slotsData } = req.body; 
+    const { venueId, courtCode = '', date, slotsData } = req.body; 
 
     const venue = await Venue.findById(venueId);
     if (!venue) {
@@ -44,6 +44,7 @@ const createSlots = async (req, res) => {
 
     const newSlots = slotsData.map(slot => ({
       venueId,
+      courtCode: slot.courtCode || courtCode || '',
       date: new Date(date),
       startTime: slot.startTime,
       endTime: slot.endTime,
@@ -53,6 +54,95 @@ const createSlots = async (req, res) => {
 
     const createdSlots = await Slot.insertMany(newSlots, { ordered: false });
     res.status(201).json(createdSlots);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const addMinutes = (time, minutesToAdd) => {
+  const [hour, minute] = String(time || '').split(':').map(Number);
+  const totalMinutes = (hour * 60) + minute + minutesToAdd;
+  const nextHour = Math.floor(totalMinutes / 60);
+  const nextMinute = totalMinutes % 60;
+  return `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
+};
+
+const timeToMinutes = (time) => {
+  const [hour, minute] = String(time || '').split(':').map(Number);
+  return (hour * 60) + minute;
+};
+
+// @desc    Generate repeated slots for a month/date range
+// @route   POST /api/slots/generate
+// @access  Private/Owner
+const generateSlots = async (req, res) => {
+  try {
+    const {
+      venueId,
+      courtCode = '',
+      startDate,
+      days = 30,
+      openingTime,
+      closingTime,
+      slotDurationMinutes = 60,
+      price,
+    } = req.body;
+
+    const venue = await Venue.findById(venueId);
+    if (!venue) {
+      return res.status(404).json({ message: 'Venue not found' });
+    }
+
+    if (venue.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const start = new Date(startDate);
+    if (Number.isNaN(start.getTime())) {
+      return res.status(400).json({ message: 'Please choose a valid start date' });
+    }
+
+    const duration = Number(slotDurationMinutes) || 60;
+    const requestedDays = Math.max(1, Number(days) || 30);
+    const requestedSlots = [];
+    const openingMinutes = timeToMinutes(openingTime);
+    const closingMinutes = timeToMinutes(closingTime);
+
+    if (closingMinutes <= openingMinutes) {
+      return res.status(400).json({ message: 'Closing time must be after opening time' });
+    }
+
+    for (let dayIndex = 0; dayIndex < requestedDays; dayIndex += 1) {
+      const slotDate = new Date(start);
+      slotDate.setDate(start.getDate() + dayIndex);
+
+      for (let slotStart = openingTime; timeToMinutes(slotStart) + duration <= closingMinutes; slotStart = addMinutes(slotStart, duration)) {
+        requestedSlots.push({
+          venueId,
+          courtCode,
+          date: slotDate,
+          startTime: slotStart,
+          endTime: addMinutes(slotStart, duration),
+          price: Number(price) || venue.pricePerHour,
+          status: 'available'
+        });
+      }
+    }
+
+    if (!requestedSlots.length) {
+      return res.status(400).json({ message: 'No slots could be generated for the selected timing pattern' });
+    }
+
+    const inserted = await Slot.insertMany(requestedSlots, { ordered: false }).catch((error) => {
+      if (error?.insertedDocs) return error.insertedDocs;
+      throw error;
+    });
+
+    res.status(201).json({
+      requestedSlots: requestedSlots.length,
+      createdSlots: inserted.length,
+      existingSlots: requestedSlots.length - inserted.length,
+    });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -200,6 +290,7 @@ const emergencyClose = async (req, res) => {
 module.exports = {
   getSlotsByVenue,
   createSlots,
+  generateSlots,
   blockSlot,
   lockSlots,
   unlockSlots,

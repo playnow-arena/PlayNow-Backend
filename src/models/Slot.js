@@ -6,6 +6,10 @@ const slotSchema = new mongoose.Schema({
     ref: 'Venue',
     required: true
   },
+  courtCode: {
+    type: String,
+    default: ''
+  },
   date: {
     type: Date,
     required: [true, 'Please add a date']
@@ -36,6 +40,6 @@ const slotSchema = new mongoose.Schema({
 });
 
 // Compound index to prevent overlapping exact slots
-slotSchema.index({ venueId: 1, date: 1, startTime: 1 }, { unique: true });
+slotSchema.index({ venueId: 1, courtCode: 1, date: 1, startTime: 1 }, { unique: true });
 
 module.exports = mongoose.model('Slot', slotSchema);

@@ -3,6 +3,7 @@ const router = express.Router();
 const { 
   getSlotsByVenue, 
   createSlots, 
+  generateSlots,
   blockSlot,
   lockSlots,
   unlockSlots,
@@ -13,6 +14,9 @@ const { authorizeRoles } = require('../middleware/roleMiddleware');
 
 router.route('/')
   .post(protect, authorizeRoles('owner', 'admin'), createSlots);
+
+router.route('/generate')
+  .post(protect, authorizeRoles('owner', 'admin'), generateSlots);
 
 router.route('/venue/:venueId')
   .get(getSlotsByVenue);

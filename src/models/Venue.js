@@ -3,19 +3,23 @@ const mongoose = require('mongoose');
 const contactSchema = new mongoose.Schema({
   name: {
     type: String,
-    trim: true
+    trim: true,
+    default: ''
   },
   phone: {
     type: String,
-    trim: true
+    trim: true,
+    default: ''
   },
   email: {
     type: String,
-    trim: true
+    trim: true,
+    default: ''
   },
   whatsapp: {
     type: String,
-    trim: true
+    trim: true,
+    default: ''
   }
 }, { _id: false });
 
@@ -29,15 +33,31 @@ const venueSchema = new mongoose.Schema({
   sportTypes: {
     type: [String],
     required: true,
-    enum: ['Badminton', 'Football Turf', 'Football', 'Cricket', 'Cricket Nets', 'Pickleball', 'Tennis', 'Basketball', 'Table Tennis']
+    enum: ['Badminton', 'Football Turf', 'Football', 'Cricket', 'Cricket Nets', 'Pickleball', 'Tennis', 'Basketball', 'Table Tennis', 'Volleyball', 'Box Cricket', 'Other']
   },
   location: {
     type: String,
     required: [true, 'Please add a location/area']
   },
+  city: {
+    type: String,
+    default: ''
+  },
+  area: {
+    type: String,
+    default: ''
+  },
+  landmark: {
+    type: String,
+    default: ''
+  },
   address: {
     type: String,
     required: [true, 'Please add a full address']
+  },
+  coordinates: {
+    lat: Number,
+    lng: Number
   },
   images: {
     type: [String],
@@ -82,8 +102,23 @@ const venueSchema = new mongoose.Schema({
     incharge: {
       type: contactSchema,
       default: {}
+    },
+    operational: {
+      type: contactSchema,
+      default: {}
     }
   },
+  courtGroups: [{
+    courtCode: { type: String, default: '' },
+    name: { type: String, default: '' },
+    sports: { type: [String], default: [] },
+    courtCount: { type: Number, default: 1 },
+    pricePerHour: { type: Number, default: 0 },
+    courtType: { type: String, default: 'Standard' },
+    dependencyGroup: { type: String, default: '' },
+    bookingMode: { type: String, enum: ['independent', 'full', 'half'], default: 'independent' },
+    isActive: { type: Boolean, default: true }
+  }],
   reviewsCount: {
     type: Number,
     default: 0

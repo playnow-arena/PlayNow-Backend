@@ -1,5 +1,35 @@
 const Venue = require('../models/Venue');
 
+const toList = (value) => (Array.isArray(value) ? value : String(value || '').split(','))
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+const uniqueList = (items = []) => (
+  items.reduce((values, item) => (
+    values.some((value) => value.toLowerCase() === item.toLowerCase()) ? values : [...values, item]
+  ), [])
+);
+
+const normalizeVenuePayload = (body = {}) => {
+  const payload = { ...body };
+
+  payload.sportTypes = uniqueList(toList(payload.sportTypes));
+  payload.amenities = uniqueList(toList(payload.amenities));
+
+  if (!payload.location) {
+    payload.location = [payload.area, payload.city, payload.address].filter(Boolean).join(', ');
+  }
+
+  if (Array.isArray(payload.courtGroups)) {
+    payload.courtGroups = payload.courtGroups.map((group) => ({
+      ...group,
+      sports: uniqueList(toList(group.sports))
+    }));
+  }
+
+  return payload;
+};
+
 // @desc    Get all venues (with filters)
 // @route   GET /api/venues
 // @access  Public
@@ -40,6 +70,8 @@ const getVenueById = async (req, res) => {
 // @access  Private/Owner
 const createVenue = async (req, res) => {
   try {
+    req.body = normalizeVenuePayload(req.body);
+
     // Add user as ownerId
     req.body.ownerId = req.user._id;
 
@@ -55,6 +87,8 @@ const createVenue = async (req, res) => {
 // @access  Private/Owner
 const updateVenue = async (req, res) => {
   try {
+    req.body = normalizeVenuePayload(req.body);
+
     let venue = await Venue.findById(req.params.id);
 
     if (!venue) {
