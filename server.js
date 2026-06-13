@@ -7,7 +7,10 @@ const http = require('http');
 const { initSocket } = require('./src/socket');
 
 // Connect to Database
-connectDB();
+connectDB().then(() => {
+  const { initAutoCleanup } = require('./src/cleanup');
+  initAutoCleanup();
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -25,6 +28,9 @@ app.use('/api/venues', require('./src/routes/venueRoutes'));
 app.use('/api/slots', require('./src/routes/slotRoutes'));
 app.use('/api/bookings', require('./src/routes/bookingRoutes'));
 app.use('/api/matches', require('./src/routes/matchRoutes'));
+app.use('/api/reviews', require('./src/routes/reviewRoutes'));
+app.use('/api/notifications', require('./src/routes/notificationRoutes'));
+
 
 app.get('/', (req, res) => {
   res.send('Play Now API is running...');

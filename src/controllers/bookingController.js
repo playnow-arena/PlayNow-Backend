@@ -2,6 +2,7 @@ const Booking = require('../models/Booking');
 const Slot = require('../models/Slot');
 const Venue = require('../models/Venue');
 const { getIO } = require('../socket');
+const n8nService = require('../utils/n8nService');
 
 // @desc    Create a booking
 // @route   POST /api/bookings
@@ -68,6 +69,8 @@ const createBooking = async (req, res) => {
       return res.status(409).json({ message: 'Conflict: One or more slots were booked by someone else.' });
     }
 
+    const { createNotification } = require('./notificationController');
+
     // 5. Create Booking
     const booking = await Booking.create({
       userId: req.user._id,
@@ -79,6 +82,25 @@ const createBooking = async (req, res) => {
       remainingAmount,
       bookingStatus: 'confirmed',
       paymentStatus: 'completed' // MVP mock
+    });
+
+    // Save persistent notifications
+    await createNotification({
+      userId: req.user._id,
+      title: 'Booking Confirmed',
+      message: `Your booking at ${venue.name} has been successfully confirmed!`,
+      type: 'booking',
+      link: '/dashboard',
+      metadata: { bookingId: booking._id, venueId }
+    });
+
+    await createNotification({
+      userId: venue.ownerId,
+      title: 'New Booking Received',
+      message: `A new booking has been made for ${venue.name} by ${req.user.name}`,
+      type: 'booking',
+      link: '/owner',
+      metadata: { bookingId: booking._id, venueId }
     });
 
     // --- REAL-TIME NOTIFICATION ---
@@ -95,6 +117,20 @@ const createBooking = async (req, res) => {
       slotIds,
       status: 'booked'
     });
+
+    // --- N8N WEBHOOK INTEGRATION ---
+    const bookingData = {
+      bookingId: booking._id.toString(),
+      playerName: req.user.name || 'Unknown',
+      email: req.user.email || 'No email provided',
+      phone: req.user.phone || 'No phone provided',
+      turfName: venue.name,
+      bookingDate: slots[0]?.date ? new Date(slots[0].date).toISOString().split('T')[0] : 'Unknown Date',
+      bookingTime: slots[0]?.startTime || 'Unknown Time',
+      amount: totalAmount,
+      bookingCreatedAt: booking.createdAt ? booking.createdAt.toISOString() : new Date().toISOString()
+    };
+    n8nService.sendBookingConfirmation(bookingData);
 
     res.status(201).json(booking);
 
@@ -215,6 +251,27 @@ const cancelBooking = async (req, res) => {
     const io = getIO();
     const venue = await Venue.findById(booking.venueId);
     if (venue) {
+      const { createNotification } = require('./notificationController');
+
+      // Save persistent notifications for cancel
+      await createNotification({
+        userId: booking.userId,
+        title: 'Booking Cancelled',
+        message: `Your booking at ${venue.name} has been cancelled.`,
+        type: 'booking',
+        link: '/dashboard',
+        metadata: { bookingId: booking._id, venueId: venue._id }
+      });
+
+      await createNotification({
+        userId: venue.ownerId,
+        title: 'Booking Cancelled',
+        message: `A booking at ${venue.name} has been cancelled by the player.`,
+        type: 'booking',
+        link: '/owner',
+        metadata: { bookingId: booking._id, venueId: venue._id }
+      });
+
       io.to(`owner_${venue.ownerId}`).emit('bookingCancelled', {
         bookingId: booking._id,
         venueName: venue.name

@@ -54,14 +54,22 @@ const userSchema = new mongoose.Schema({
     enum: ['player', 'owner', 'admin'],
     default: 'player'
   },
-  accountStatus: {
-    type: String,
-    enum: ['active', 'suspended', 'pending'],
-    default: 'active'
-  }
-}, {
-  timestamps: true
-});
+    accountStatus: {
+      type: String,
+      enum: ['active', 'suspended', 'pending'],
+      default: 'active'
+    },
+    notificationPreferences: {
+      booking: { type: Boolean, default: true },
+      match: { type: Boolean, default: true },
+      review: { type: Boolean, default: true },
+      system: { type: Boolean, default: true }
+    },
+    resetPasswordToken: String,
+    resetPasswordExpire: Date
+  }, {
+    timestamps: true
+  });
 
 // Encrypt password using bcrypt before saving
 // NOTE: async pre-save hooks in Mongoose 7+ do NOT receive `next` as a callback.

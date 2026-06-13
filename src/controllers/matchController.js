@@ -67,6 +67,30 @@ const joinMatch = async (req, res) => {
 
     await match.save();
 
+    const { createNotification } = require('./notificationController');
+
+    // Notify the host
+    if (match.host.toString() !== req.user._id.toString()) {
+      await createNotification({
+        userId: match.host,
+        title: 'Player Joined Match',
+        message: `${req.user.name} has joined your ${match.sport} match!`,
+        type: 'match',
+        link: `/feed`,
+        metadata: { matchId: match._id }
+      });
+    }
+
+    // Notify the player joining
+    await createNotification({
+      userId: req.user._id,
+      title: 'Joined Match',
+      message: `You joined the ${match.sport} match on ${new Date(match.date).toLocaleDateString()} successfully!`,
+      type: 'match',
+      link: `/feed`,
+      metadata: { matchId: match._id }
+    });
+
     res.json({
       message: 'Joined successfully',
       match,

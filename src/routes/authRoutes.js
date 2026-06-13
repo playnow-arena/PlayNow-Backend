@@ -10,6 +10,8 @@ const {
   getMe,
   updateProfile,
   updateProfileByPhone,
+  forgotPassword,
+  resetPassword,
 } = require('../controllers/authController');
 
 const { protect } = require('../middleware/authMiddleware');
@@ -17,6 +19,8 @@ const { protect } = require('../middleware/authMiddleware');
 // Standard credential routes
 router.post('/signup', signup);
 router.post('/login',  login);
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
 
 // ── Firebase Phone OTP (primary) ─────────────────────────────────────────────
 // Frontend: signInWithPhoneNumber → confirmationResult.confirm(otp) → idToken

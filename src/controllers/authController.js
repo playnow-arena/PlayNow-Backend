@@ -1,8 +1,10 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const generatePlayNowId = require('../utils/generatePlayNowId');
 const bcrypt = require('bcryptjs');
 const admin = require('../config/firebaseAdmin');
+const { sendPasswordResetEmail } = require('../utils/emailService');
 
 // ── Mock OTP store (development fallback) ────────────────────────────────────
 /** In-memory OTP store: Map<phone, { otp, expiresAt }> */
@@ -17,44 +19,56 @@ const generateToken = (id) => {
   });
 };
 
-// @desc    Register a new user
+// @desc    Register a new player user
 // @route   POST /api/auth/signup
 // @access  Public
 const signup = async (req, res) => {
   try {
-    const { name, phone, email, password, role } = req.body;
+    const { name, phone, email, password, confirmPassword } = req.body;
 
     // Input validation
-    if (!name || !password || (!email && !phone)) {
-      return res.status(400).json({ message: 'Please provide name, password and either email or phone' });
+    if (!name || !email || !phone || !password) {
+      return res.status(400).json({ message: 'Please provide name, email, phone number, and password' });
     }
 
-    const sanitizedEmail = email ? email.trim().toLowerCase() : undefined;
-    const sanitizedPhone = phone ? phone.trim() : undefined;
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    if (confirmPassword && password !== confirmPassword) {
+      return res.status(400).json({ message: 'Passwords do not match' });
+    }
+
+    const sanitizedEmail = email.trim().toLowerCase();
+    const digits = String(phone).replace(/\D/g, '').slice(-10);
+    if (digits.length !== 10) {
+      return res.status(400).json({ message: 'Please provide a valid 10-digit phone number' });
+    }
+    const formattedPhone = `+91${digits}`;
 
     // Check if user exists
-    const userExists = await User.findOne({ 
+    const userExists = await User.findOne({
       $or: [
-        ...(sanitizedEmail ? [{ email: sanitizedEmail }] : []),
-        ...(sanitizedPhone ? [{ phone: sanitizedPhone }] : [])
-      ] 
+        { email: sanitizedEmail },
+        { phone: formattedPhone }
+      ]
     });
-    
+
     if (userExists) {
-      return res.status(400).json({ message: 'User already exists with this email or phone' });
+      return res.status(400).json({ message: 'User already exists with this email or phone number' });
     }
 
     // Generate unique PlayNow ID
     const playNowId = await generatePlayNowId();
 
-    // Create user
+    // Create user — always as 'player' (owners/admins are created via admin portal)
     const user = await User.create({
       name: name.trim(),
-      phone: sanitizedPhone,
+      phone: formattedPhone,
       email: sanitizedEmail,
       password,
       playNowId,
-      role: role || 'player'
+      role: 'player'
     });
 
     if (user) {
@@ -148,6 +162,8 @@ const phoneAuth = async (req, res) => {
     let isNewUser = false;
 
     if (!user) {
+      // Auto-create only player accounts via Firebase OTP.
+      // Admins/Owners must be pre-created in the database by an administrator.
       isNewUser       = true;
       const playNowId = await generatePlayNowId();
       user = await User.create({
@@ -156,10 +172,11 @@ const phoneAuth = async (req, res) => {
         firebaseId:   uid,
         playNowId,
         profilePhoto: profilePhoto || 'default.jpg',
-        role:         'player',
+        role:         'player',   // Only players are auto-created via Firebase OTP
       });
     } else {
-      // Sync firebaseId if this is the first OTP login for an existing user
+      // Sync firebaseId if this is the first OTP login for an existing user.
+      // IMPORTANT: Never overwrite the existing role — preserve admin/owner roles.
       if (!user.firebaseId) {
         user.firebaseId = uid;
         await user.save();
@@ -213,17 +230,34 @@ const verifyMockOtp = async (req, res) => {
     const digits         = String(phone).replace(/\D/g, '').slice(-10);
     const formattedPhone = `+91${digits}`;
     const stored         = otpStore.get(formattedPhone);
-    if (!stored)                        return res.status(400).json({ message: 'OTP not found. Request a new one.' });
-    if (Date.now() > stored.expiresAt)  { otpStore.delete(formattedPhone); return res.status(400).json({ message: 'OTP expired.' }); }
+    if (!stored)                           return res.status(400).json({ message: 'OTP not found. Request a new one.' });
+    if (Date.now() > stored.expiresAt)     { otpStore.delete(formattedPhone); return res.status(400).json({ message: 'OTP expired.' }); }
     if (stored.otp !== String(otp).trim()) return res.status(400).json({ message: 'Invalid OTP.' });
     otpStore.delete(formattedPhone);
+
     let user      = await User.findOne({ phone: formattedPhone });
     let isNewUser = false;
+
     if (!user) {
+      // Only auto-create accounts for players, NOT for admin/owner portals.
+      // Admins and Owners must be pre-created in the database.
+      // If name is not provided, this is likely an admin/owner login attempt — reject it.
+      if (!name) {
+        return res.status(404).json({
+          message: 'No account found with this mobile number. Please contact the administrator to create your account.',
+        });
+      }
       isNewUser       = true;
       const playNowId = await generatePlayNowId();
-      user = await User.create({ name: name ? name.trim() : `Player_${playNowId.split('-')[1]}`, phone: formattedPhone, playNowId, profilePhoto: 'default.jpg', role: 'player' });
+      user = await User.create({
+        name:         name.trim(),
+        phone:        formattedPhone,
+        playNowId,
+        profilePhoto: 'default.jpg',
+        role:         'player',   // Only players are auto-created via OTP
+      });
     }
+    // IMPORTANT: Always return the role from the database — never override it.
     res.json({ _id: user._id, name: user.name, phone: user.phone, playNowId: user.playNowId, role: user.role, isNewUser, token: generateToken(user._id) });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -255,9 +289,15 @@ const updateProfile = async (req, res) => {
 
     user.name = req.body.name || user.name;
     user.username = req.body.username || user.username;
-user.bio = req.body.bio || user.bio;
-user.favoriteSport = req.body.favoriteSport || user.favoriteSport;
-user.location = req.body.location || user.location;
+    user.bio = req.body.bio || user.bio;
+    user.favoriteSport = req.body.favoriteSport || user.favoriteSport;
+    user.location = req.body.location || user.location;
+    if (req.body.notificationPreferences) {
+      user.notificationPreferences = {
+        ...user.notificationPreferences,
+        ...req.body.notificationPreferences
+      };
+    }
 
     const updatedUser = await user.save();
 
@@ -269,9 +309,10 @@ user.location = req.body.location || user.location;
   role: updatedUser.role,
   token: generateToken(updatedUser._id),
   username: updatedUser.username,
-bio: updatedUser.bio,
-favoriteSport: updatedUser.favoriteSport,
-location: updatedUser.location,
+  bio: updatedUser.bio,
+  favoriteSport: updatedUser.favoriteSport,
+  location: updatedUser.location,
+  notificationPreferences: updatedUser.notificationPreferences,
 });
 
   } catch (error) {
@@ -319,6 +360,103 @@ location: updatedUser.location,
     res.status(500).json({ message: error.message });
   }
 };
+// @desc    Request password reset email
+// @route   POST /api/auth/forgot-password
+// @access  Public
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Please provide an email address' });
+    }
+
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
+
+    // Always return success to prevent email enumeration
+    if (!user) {
+      return res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+
+    // Hash token and store in DB
+    user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    user.resetPasswordExpire = Date.now() + 30 * 60 * 1000; // 30 minutes
+    await user.save();
+
+    // Send email with the unhashed token (user receives plain token, DB has hashed)
+    try {
+      await sendPasswordResetEmail(user.email, resetToken);
+    } catch (emailErr) {
+      console.error('[AUTH] Failed to send reset email:', emailErr.message);
+      // Clear the token if email fails
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save();
+      return res.status(500).json({ message: 'Failed to send reset email. Please try again later.' });
+    }
+
+    res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Reset password using token
+// @route   POST /api/auth/reset-password
+// @access  Public
+const resetPassword = async (req, res) => {
+  try {
+    const { token, password, confirmPassword } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ message: 'Token and new password are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    if (confirmPassword && password !== confirmPassword) {
+      return res.status(400).json({ message: 'Passwords do not match' });
+    }
+
+    // Hash the token from the URL to compare with DB
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired reset token. Please request a new password reset.' });
+    }
+
+    // Set new password (pre-save hook will hash it)
+    user.password = password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    await user.save();
+
+    // Auto-login: return JWT so user is immediately authenticated
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      playNowId: user.playNowId,
+      role: user.role,
+      token: generateToken(user._id),
+      message: 'Password reset successful',
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   signup,
   login,
@@ -328,4 +466,6 @@ module.exports = {
   getMe,
   updateProfile,
   updateProfileByPhone,
+  forgotPassword,
+  resetPassword,
 };

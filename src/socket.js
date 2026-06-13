@@ -25,6 +25,13 @@ const initSocket = (server) => {
       console.log(`👤 [ROOM] Owner ${ownerId} joined: owner_${ownerId}`);
     });
 
+    // Join room based on user DB ID (for user-specific real-time notifications)
+    socket.on('join_user_room', (userId) => {
+      if (!userId) return;
+      socket.join(`user_${userId}`);
+      console.log(`👤 [ROOM] User joined room: user_${userId}`);
+    });
+
     // Join room based on venueId (for real-time slot updates on booking page)
     socket.on('join_venue_room', (venueId) => {
       if (!venueId) return;
