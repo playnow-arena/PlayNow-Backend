@@ -1,5 +1,24 @@
 const mongoose = require('mongoose');
 
+const contactSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    trim: true
+  },
+  phone: {
+    type: String,
+    trim: true
+  },
+  email: {
+    type: String,
+    trim: true
+  },
+  whatsapp: {
+    type: String,
+    trim: true
+  }
+}, { _id: false });
+
 const venueSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -37,6 +56,10 @@ const venueSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  managerIds: [{
+    type: mongoose.Schema.ObjectId,
+    ref: 'User'
+  }],
   rating: {
     type: Number,
     min: [1, 'Rating must be at least 1'],
@@ -46,6 +69,20 @@ const venueSchema = new mongoose.Schema({
   description: {
     type: String,
     default: 'A premium sports venue for athletes.'
+  },
+  contacts: {
+    owner: {
+      type: contactSchema,
+      default: {}
+    },
+    manager: {
+      type: contactSchema,
+      default: {}
+    },
+    incharge: {
+      type: contactSchema,
+      default: {}
+    }
   },
   reviewsCount: {
     type: Number,

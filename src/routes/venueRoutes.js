@@ -16,7 +16,7 @@ router.route('/')
   .post(protect, authorizeRoles('owner', 'admin'), createVenue);
 
 router.route('/my')
-  .get(protect, authorizeRoles('owner', 'admin'), getMyVenues);
+  .get(protect, authorizeRoles('owner', 'manager', 'admin'), getMyVenues);
 
 router.route('/:id')
   .get(getVenueById)

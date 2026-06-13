@@ -51,7 +51,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['player', 'owner', 'admin'],
+    enum: ['player', 'owner', 'manager', 'admin'],
     default: 'player'
   },
     accountStatus: {

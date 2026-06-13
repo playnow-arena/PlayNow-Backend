@@ -187,6 +187,7 @@ const createOwnerRequest = async (req, res) => {
     const fallbackSportTypes = normalizeSportTypes(sportTypes);
 
     const ownerRequest = await OwnerRequest.create({
+      submittedBy: req.user._id,
       ownerName: ownerName.trim(),
       phone: normalizedPhone,
       email: normalizedEmail,

@@ -105,7 +105,13 @@ const deleteVenue = async (req, res) => {
 // @access  Private/Owner
 const getMyVenues = async (req, res) => {
   try {
-    const venues = await Venue.find({ ownerId: req.user._id });
+    const query = req.user.role === 'admin'
+      ? {}
+      : req.user.role === 'manager'
+        ? { managerIds: req.user._id }
+        : { ownerId: req.user._id };
+
+    const venues = await Venue.find(query);
     res.json(venues);
   } catch (error) {
     res.status(500).json({ message: error.message });
