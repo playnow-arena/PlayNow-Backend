@@ -174,6 +174,75 @@ const getOwnerBookings = async (req, res) => {
   }
 };
 
+// @desc    Get all bookings for admin
+// @route   GET /api/bookings/admin
+// @access  Private/Admin
+const getAdminBookings = async (req, res) => {
+  try {
+    const { status, venueId, date } = req.query;
+    const query = {};
+
+    if (status) query.bookingStatus = status;
+    if (venueId) query.venueId = venueId;
+
+    let bookingsQuery = Booking.find(query)
+      .sort({ createdAt: -1 })
+      .populate('userId', 'name phone playNowId')
+      .populate('venueId', 'name location city area ownerId')
+      .populate('slotIds', 'date startTime endTime price status');
+
+    let bookings = await bookingsQuery;
+
+    if (date) {
+      const dateKey = new Date(date).toISOString().slice(0, 10);
+      bookings = bookings.filter((booking) => (
+        booking.slotIds || []
+      ).some((slot) => (
+        slot.date ? new Date(slot.date).toISOString().slice(0, 10) === dateKey : false
+      )));
+    }
+
+    res.json(bookings);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Mark booking balance collected
+// @route   PUT /api/bookings/:id/collect-balance
+// @access  Private/Owner/Admin
+const collectBookingBalance = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id).populate('venueId');
+
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    if (booking.bookingStatus === 'cancelled') {
+      return res.status(400).json({ message: 'Cannot collect balance for cancelled booking' });
+    }
+
+    if (req.user.role !== 'admin' && booking.venueId.ownerId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized to collect this balance' });
+    }
+
+    booking.paidAmount = booking.totalAmount;
+    booking.remainingAmount = 0;
+    booking.paymentStatus = 'completed';
+    await booking.save();
+
+    const populatedBooking = await Booking.findById(booking._id)
+      .populate('userId', 'name phone playNowId')
+      .populate('venueId', 'name location city area ownerId')
+      .populate('slotIds', 'date startTime endTime price status');
+
+    res.json(populatedBooking);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Cancel a booking
 // @route   PUT /api/bookings/:id/cancel
 // @access  Private
@@ -296,5 +365,7 @@ module.exports = {
   createBooking,
   getMyBookings,
   getOwnerBookings,
+  getAdminBookings,
+  collectBookingBalance,
   cancelBooking
 };

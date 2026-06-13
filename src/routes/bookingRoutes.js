@@ -4,6 +4,8 @@ const {
   createBooking, 
   getMyBookings, 
   getOwnerBookings, 
+  getAdminBookings,
+  collectBookingBalance,
   cancelBooking 
 } = require('../controllers/bookingController');
 const { protect } = require('../middleware/authMiddleware');
@@ -17,6 +19,12 @@ router.route('/my')
 
 router.route('/owner')
   .get(protect, authorizeRoles('owner', 'admin'), getOwnerBookings);
+
+router.route('/admin')
+  .get(protect, authorizeRoles('admin'), getAdminBookings);
+
+router.route('/:id/collect-balance')
+  .put(protect, authorizeRoles('owner', 'admin'), collectBookingBalance);
 
 router.route('/:id/cancel')
   .put(protect, cancelBooking);
