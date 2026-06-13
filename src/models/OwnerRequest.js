@@ -126,6 +126,10 @@ const ownerRequestSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'rejected'],
     default: 'pending'
   },
+  submittedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   reviewedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'

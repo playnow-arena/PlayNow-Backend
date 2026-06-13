@@ -1,7 +1,6 @@
 const OwnerRequest = require('../models/OwnerRequest');
 const User = require('../models/User');
 const Venue = require('../models/Venue');
-const generatePlayNowId = require('../utils/generatePlayNowId');
 
 const normalizePhone = (phone) => {
   const digits = String(phone || '').replace(/\D/g, '');
@@ -37,20 +36,24 @@ const getPhoneLookupValues = (phone) => {
 };
 
 const findExistingOwnerApplicant = async (ownerRequest) => {
-  const phoneValues = getPhoneLookupValues(ownerRequest.phone);
+  if (ownerRequest.submittedBy) {
+    const submittedUser = await User.findById(ownerRequest.submittedBy);
+    if (submittedUser) return submittedUser;
+  }
+
   const email = normalizeOptionalString(ownerRequest.email).toLowerCase();
+  if (email) {
+    const emailMatch = await User.findOne({
+      email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' }
+    });
 
-  const phoneMatch = phoneValues.length
-    ? await User.findOne({ phone: { $in: phoneValues } })
-    : null;
+    if (emailMatch) return emailMatch;
+  }
 
-  if (phoneMatch) return phoneMatch;
+  const phoneValues = getPhoneLookupValues(ownerRequest.phone);
+  if (!phoneValues.length) return null;
 
-  if (!email) return null;
-
-  return User.findOne({
-    email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' }
-  });
+  return User.findOne({ phone: { $in: phoneValues } });
 };
 
 const promoteUserToOwner = async (user, ownerRequest) => {
@@ -59,7 +62,9 @@ const promoteUserToOwner = async (user, ownerRequest) => {
   if (!user.email && ownerRequest.email) {
     user.email = ownerRequest.email;
   }
-  user.role = 'owner';
+  if (user.role !== 'admin') {
+    user.role = 'owner';
+  }
   await user.save();
   return user;
 };
@@ -239,26 +244,7 @@ const approveOwnerRequest = async (req, res) => {
     if (owner) {
       owner = await promoteUserToOwner(owner, ownerRequest);
     } else {
-      const playNowId = await generatePlayNowId();
-      try {
-        owner = await User.create({
-          name: ownerRequest.ownerName,
-          phone: ownerRequest.phone,
-          email: ownerRequest.email || undefined,
-          role: 'owner',
-          playNowId
-        });
-      } catch (error) {
-        if (error?.code !== 11000) {
-          throw error;
-        }
-
-        const existingUser = await findExistingOwnerApplicant(ownerRequest);
-        if (!existingUser) {
-          throw error;
-        }
-        owner = await promoteUserToOwner(existingUser, ownerRequest);
-      }
+      return res.status(404).json({ message: 'User not found for this owner request' });
     }
 
     const venue = await Venue.create(buildVenuePayload(ownerRequest, owner._id));

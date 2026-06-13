@@ -4,7 +4,6 @@ const crypto = require('crypto');
 const generatePlayNowId = require('../utils/generatePlayNowId');
 const bcrypt = require('bcryptjs');
 const admin = require('../config/firebaseAdmin');
-const { sendPasswordResetEmail } = require('../utils/emailService');
 
 // ── Mock OTP store (development fallback) ────────────────────────────────────
 /** In-memory OTP store: Map<phone, { otp, expiresAt }> */
@@ -17,6 +16,18 @@ const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: '30d',
   });
+};
+
+const getPhoneVariants = (value) => {
+  const rawValue = String(value || '').trim();
+  const digits = rawValue.replace(/\D/g, '').slice(-10);
+  const variants = [rawValue];
+
+  if (digits.length === 10) {
+    variants.push(digits, `+91${digits}`, `91${digits}`);
+  }
+
+  return [...new Set(variants.filter(Boolean))];
 };
 
 // @desc    Register a new player user
@@ -50,12 +61,12 @@ const signup = async (req, res) => {
     const userExists = await User.findOne({
       $or: [
         { email: sanitizedEmail },
-        { phone: formattedPhone }
+        { phone: { $in: getPhoneVariants(formattedPhone) } }
       ]
     });
 
     if (userExists) {
-      return res.status(400).json({ message: 'User already exists with this email or phone number' });
+      return res.status(400).json({ message: 'Account already exists with this email or phone number' });
     }
 
     // Generate unique PlayNow ID
@@ -94,20 +105,25 @@ const signup = async (req, res) => {
 // @access  Public
 const login = async (req, res) => {
   try {
-    const { email, phone, ownerId, password } = req.body;
+    const { loginId, email, phone, ownerId, password } = req.body;
+    const identifier = loginId || email || phone || ownerId;
 
-    if (!password || (!email && !phone && !ownerId)) {
+    if (!password || !identifier) {
       return res.status(400).json({ message: 'Please provide credentials and password' });
     }
 
-    // Check for user by email, phone, or ownerId
-    let query = {};
+    let query;
     if (ownerId) {
       query = { ownerId: ownerId.trim() };
-    } else if (email) {
-      query = { email: email.trim().toLowerCase() };
-    } else if (phone) {
-      query = { phone: phone.trim() };
+    } else {
+      const normalizedIdentifier = String(identifier).trim();
+      const emailValue = normalizedIdentifier.toLowerCase();
+      query = {
+        $or: [
+          { email: emailValue },
+          { phone: { $in: getPhoneVariants(normalizedIdentifier) } }
+        ]
+      };
     }
 
     const user = await User.findOne(query).select('+password');
@@ -364,44 +380,9 @@ location: updatedUser.location,
 // @route   POST /api/auth/forgot-password
 // @access  Public
 const forgotPassword = async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ message: 'Please provide an email address' });
-    }
-
-    const user = await User.findOne({ email: email.trim().toLowerCase() });
-
-    // Always return success to prevent email enumeration
-    if (!user) {
-      return res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
-    }
-
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-
-    // Hash token and store in DB
-    user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    user.resetPasswordExpire = Date.now() + 30 * 60 * 1000; // 30 minutes
-    await user.save();
-
-    // Send email with the unhashed token (user receives plain token, DB has hashed)
-    try {
-      await sendPasswordResetEmail(user.email, resetToken);
-    } catch (emailErr) {
-      console.error('[AUTH] Failed to send reset email:', emailErr.message);
-      // Clear the token if email fails
-      user.resetPasswordToken = undefined;
-      user.resetPasswordExpire = undefined;
-      await user.save();
-      return res.status(500).json({ message: 'Failed to send reset email. Please try again later.' });
-    }
-
-    res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  return res.status(501).json({
+    message: 'Password reset is not available yet. Please contact PlayNow support.'
+  });
 };
 
 // @desc    Reset password using token
