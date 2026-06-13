@@ -10,7 +10,7 @@ const venueSchema = new mongoose.Schema({
   sportTypes: {
     type: [String],
     required: true,
-    enum: ['Badminton', 'Football Turf', 'Cricket Nets', 'Tennis', 'Basketball', 'Table Tennis']
+    enum: ['Badminton', 'Football Turf', 'Football', 'Cricket', 'Cricket Nets', 'Pickleball', 'Tennis', 'Basketball', 'Table Tennis']
   },
   location: {
     type: String,

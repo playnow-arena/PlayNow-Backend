@@ -96,6 +96,9 @@ const signup = async (req, res) => {
       res.status(400).json({ message: 'Invalid user data' });
     }
   } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(400).json({ message: 'Account already exists with this email or phone number' });
+    }
     res.status(500).json({ message: error.message });
   }
 };

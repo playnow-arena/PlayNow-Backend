@@ -21,6 +21,24 @@ const normalizeList = (value) => {
   return [];
 };
 
+const sportNameMap = {
+  badminton: 'Badminton',
+  pickleball: 'Pickleball',
+  cricket: 'Cricket',
+  'cricket nets': 'Cricket',
+  football: 'Football',
+  'football turf': 'Football Turf',
+  tennis: 'Tennis',
+  basketball: 'Basketball',
+  'table tennis': 'Table Tennis'
+};
+
+const normalizeSportTypes = (sports) => (
+  [...new Set(normalizeList(sports)
+    .map((sport) => sportNameMap[String(sport).trim().toLowerCase()] || String(sport).trim())
+    .filter(Boolean))]
+);
+
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const getPhoneLookupValues = (phone) => {
@@ -107,7 +125,7 @@ const normalizeCourtGroups = (courtGroups) => {
   return courtGroups
     .map((group) => ({
       name: normalizeOptionalString(group.name),
-      sports: normalizeList(group.sports),
+      sports: normalizeSportTypes(group.sports),
       courtCount: Number(group.courtCount) || 1,
       pricePerHour: group.pricePerHour !== undefined && group.pricePerHour !== '' ? Number(group.pricePerHour) : undefined,
       courtType: normalizeOptionalString(group.courtType) || 'Standard',
@@ -119,7 +137,7 @@ const normalizeCourtGroups = (courtGroups) => {
 const buildVenuePayload = (request, ownerId) => ({
   name: request.venueName,
   ownerId,
-  sportTypes: request.sportTypes.length ? request.sportTypes : ['Badminton'],
+  sportTypes: normalizeSportTypes(request.sportTypes).length ? normalizeSportTypes(request.sportTypes) : ['Badminton'],
   location: request.location || request.address,
   city: request.city,
   area: request.area,
@@ -166,7 +184,7 @@ const createOwnerRequest = async (req, res) => {
     const normalizedPhone = normalizePhone(phone);
     const normalizedEmail = email ? email.trim().toLowerCase() : undefined;
     const normalizedCourtGroups = normalizeCourtGroups(courtGroups);
-    const fallbackSportTypes = normalizeList(sportTypes);
+    const fallbackSportTypes = normalizeSportTypes(sportTypes);
 
     const ownerRequest = await OwnerRequest.create({
       ownerName: ownerName.trim(),
