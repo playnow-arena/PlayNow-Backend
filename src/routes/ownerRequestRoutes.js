@@ -10,7 +10,7 @@ const { protect } = require('../middleware/authMiddleware');
 const { authorizeRoles } = require('../middleware/roleMiddleware');
 
 router.route('/')
-  .post(protect, authorizeRoles('player'), createOwnerRequest)
+  .post(createOwnerRequest)
   .get(protect, authorizeRoles('admin'), getOwnerRequests);
 
 router.route('/:id/approve')
