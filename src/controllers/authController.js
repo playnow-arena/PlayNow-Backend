@@ -18,9 +18,19 @@ const generateToken = (id) => {
   });
 };
 
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const normalizePhone = (phone) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  const mobileDigits = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
+  return mobileDigits.length === 10 ? `+91${mobileDigits}` : '';
+};
+
 const getPhoneVariants = (value) => {
   const rawValue = String(value || '').trim();
-  const digits = rawValue.replace(/\D/g, '').slice(-10);
+  const normalizedPhone = normalizePhone(rawValue);
+  const digits = normalizedPhone.replace(/\D/g, '').slice(-10);
   const variants = [rawValue];
 
   if (digits.length === 10) {
@@ -28,6 +38,21 @@ const getPhoneVariants = (value) => {
   }
 
   return [...new Set(variants.filter(Boolean))];
+};
+
+const duplicateMessageForError = (error) => {
+  const duplicateField = Object.keys(error?.keyPattern || {})[0];
+  if (duplicateField === 'phone') return 'This phone number is already registered. Please login.';
+  if (duplicateField === 'email') return 'This email is already registered. Please login.';
+  return 'An account already exists with these details. Please login.';
+};
+
+const findExistingByEmailOrPhone = async (email, phone) => {
+  const clauses = [];
+  if (email) clauses.push({ email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
+  if (phone) clauses.push({ phone: { $in: getPhoneVariants(phone) } });
+  if (!clauses.length) return null;
+  return User.findOne({ $or: clauses });
 };
 
 // @desc    Register a new player user
@@ -50,23 +75,20 @@ const signup = async (req, res) => {
       return res.status(400).json({ message: 'Passwords do not match' });
     }
 
-    const sanitizedEmail = email.trim().toLowerCase();
-    const digits = String(phone).replace(/\D/g, '').slice(-10);
-    if (digits.length !== 10) {
+    const sanitizedEmail = normalizeEmail(email);
+    const formattedPhone = normalizePhone(phone);
+    if (!formattedPhone) {
       return res.status(400).json({ message: 'Please provide a valid 10-digit phone number' });
     }
-    const formattedPhone = `+91${digits}`;
 
     // Check if user exists
-    const userExists = await User.findOne({
-      $or: [
-        { email: sanitizedEmail },
-        { phone: { $in: getPhoneVariants(formattedPhone) } }
-      ]
-    });
+    const userExists = await findExistingByEmailOrPhone(sanitizedEmail, formattedPhone);
 
     if (userExists) {
-      return res.status(400).json({ message: 'Account already exists with this email or phone number' });
+      if (normalizeEmail(userExists.email) === sanitizedEmail) {
+        return res.status(400).json({ message: 'This email is already registered. Please login.' });
+      }
+      return res.status(400).json({ message: 'This phone number is already registered. Please login.' });
     }
 
     // Generate unique PlayNow ID
@@ -97,7 +119,7 @@ const signup = async (req, res) => {
     }
   } catch (error) {
     if (error?.code === 11000) {
-      return res.status(400).json({ message: 'Account already exists with this email or phone number' });
+      return res.status(400).json({ message: duplicateMessageForError(error) });
     }
     res.status(500).json({ message: error.message });
   }
@@ -120,7 +142,7 @@ const login = async (req, res) => {
       query = { ownerId: ownerId.trim() };
     } else {
       const normalizedIdentifier = String(identifier).trim();
-      const emailValue = normalizedIdentifier.toLowerCase();
+      const emailValue = normalizeEmail(normalizedIdentifier);
       query = {
         $or: [
           { email: emailValue },
@@ -177,7 +199,11 @@ const phoneAuth = async (req, res) => {
     }
 
     // Find existing user or create a new one
-    let user      = await User.findOne({ $or: [{ phone: phone_number }, { firebaseId: uid }] });
+    const formattedPhone = normalizePhone(phone_number);
+    if (!formattedPhone) {
+      return res.status(400).json({ message: 'Phone number not found in Firebase token.' });
+    }
+    let user      = await User.findOne({ $or: [{ phone: { $in: getPhoneVariants(formattedPhone) } }, { firebaseId: uid }] });
     let isNewUser = false;
 
     if (!user) {
@@ -187,7 +213,7 @@ const phoneAuth = async (req, res) => {
       const playNowId = await generatePlayNowId();
       user = await User.create({
         name:         name ? name.trim() : `Player_${playNowId.split('-')[1]}`,
-        phone:        phone_number,
+        phone:        formattedPhone,
         firebaseId:   uid,
         playNowId,
         profilePhoto: profilePhoto || 'default.jpg',
@@ -226,8 +252,10 @@ const sendMockOtp = async (req, res) => {
     if (!phone || String(phone).replace(/\D/g, '').length < 10) {
       return res.status(400).json({ message: 'Please provide a valid 10-digit phone number' });
     }
-    const digits         = String(phone).replace(/\D/g, '').slice(-10);
-    const formattedPhone = `+91${digits}`;
+    const formattedPhone = normalizePhone(phone);
+    if (!formattedPhone) {
+      return res.status(400).json({ message: 'Please provide a valid 10-digit phone number' });
+    }
     otpStore.set(formattedPhone, { otp: DEV_OTP, expiresAt: Date.now() + OTP_EXPIRY_MS });
     console.log(`[DEV FALLBACK] OTP for ${formattedPhone}: ${DEV_OTP}`);
     res.json({
@@ -246,15 +274,17 @@ const verifyMockOtp = async (req, res) => {
   try {
     const { phone, otp, name } = req.body;
     if (!phone || !otp) return res.status(400).json({ message: 'Phone and OTP are required' });
-    const digits         = String(phone).replace(/\D/g, '').slice(-10);
-    const formattedPhone = `+91${digits}`;
+    const formattedPhone = normalizePhone(phone);
+    if (!formattedPhone) {
+      return res.status(400).json({ message: 'Please provide a valid 10-digit phone number' });
+    }
     const stored         = otpStore.get(formattedPhone);
     if (!stored)                           return res.status(400).json({ message: 'OTP not found. Request a new one.' });
     if (Date.now() > stored.expiresAt)     { otpStore.delete(formattedPhone); return res.status(400).json({ message: 'OTP expired.' }); }
     if (stored.otp !== String(otp).trim()) return res.status(400).json({ message: 'Invalid OTP.' });
     otpStore.delete(formattedPhone);
 
-    let user      = await User.findOne({ phone: formattedPhone });
+    let user      = await User.findOne({ phone: { $in: getPhoneVariants(formattedPhone) } });
     let isNewUser = false;
 
     if (!user) {
@@ -347,10 +377,12 @@ const updateProfileByPhone = async (req, res) => {
       return res.status(400).json({ message: 'Phone and name are required' });
     }
 
-    const digits = String(phone).replace(/\D/g, '').slice(-10);
-    const formattedPhone = `+91${digits}`;
+    const formattedPhone = normalizePhone(phone);
+    if (!formattedPhone) {
+      return res.status(400).json({ message: 'Please provide a valid 10-digit phone number' });
+    }
 
-    const user = await User.findOne({ phone: formattedPhone });
+    const user = await User.findOne({ phone: { $in: getPhoneVariants(formattedPhone) } });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });

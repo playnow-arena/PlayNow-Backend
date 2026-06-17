@@ -255,7 +255,7 @@ const cancelBooking = async (req, res) => {
     }
 
     // Ensure user is the one who booked it
-    if (booking.userId.toString() !== req.user.playNowId) {
+    if (booking.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to cancel this booking' });
     }
 

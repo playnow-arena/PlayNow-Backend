@@ -155,7 +155,7 @@ const buildVenuePayload = (request, ownerId) => ({
 
 // @desc    Submit owner onboarding request
 // @route   POST /api/owner-requests
-// @access  Public
+// @access  Private/Player
 const createOwnerRequest = async (req, res) => {
   try {
     const {

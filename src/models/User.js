@@ -1,6 +1,16 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+const normalizeEmail = (email) => {
+  const normalized = String(email || '').trim().toLowerCase();
+  return normalized || undefined;
+};
+const normalizePhone = (phone) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  const mobileDigits = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
+  return mobileDigits.length === 10 ? `+91${mobileDigits}` : String(phone || '').trim();
+};
+
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -9,12 +19,14 @@ const userSchema = new mongoose.Schema({
   phone: {
     type: String,
     required: [true, 'Please add a phone number'],
-    unique: true
+    unique: true,
+    set: normalizePhone
   },
   email: {
     type: String,
     unique: true,
     sparse: true, // Allow multiple null/undefined values
+    set: normalizeEmail,
     match: [
       /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
       'Please add a valid email'

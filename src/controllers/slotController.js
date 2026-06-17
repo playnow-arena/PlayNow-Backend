@@ -148,6 +148,80 @@ const generateSlots = async (req, res) => {
   }
 };
 
+// @desc    Get slots managed by owner/admin
+// @route   GET /api/slots/manage
+// @access  Private/Owner
+const getManagedSlots = async (req, res) => {
+  try {
+    const { venueId, courtCode, date, status } = req.query;
+    const query = {};
+
+    if (venueId) {
+      const venue = await Venue.findById(venueId);
+      if (!venue) {
+        return res.status(404).json({ message: 'Venue not found' });
+      }
+      if (venue.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Not authorized' });
+      }
+      query.venueId = venueId;
+    } else if (req.user.role !== 'admin') {
+      const venues = await Venue.find({ ownerId: req.user._id }).select('_id');
+      query.venueId = { $in: venues.map((venue) => venue._id) };
+    }
+
+    if (courtCode) query.courtCode = courtCode;
+    if (status) query.status = status;
+    if (date) {
+      const startDate = new Date(date);
+      startDate.setUTCHours(0, 0, 0, 0);
+      const endDate = new Date(date);
+      endDate.setUTCHours(23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    }
+
+    const slots = await Slot.find(query).sort({ date: 1, startTime: 1 });
+    res.json(slots);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Update a slot status from owner dashboard
+// @route   PUT /api/slots/:id
+// @access  Private/Owner
+const updateSlotStatus = async (req, res) => {
+  try {
+    const { status, reason } = req.body;
+    const allowedStatuses = ['available', 'blocked'];
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ message: 'Slot status must be available or blocked' });
+    }
+
+    const slot = await Slot.findById(req.params.id).populate('venueId');
+    if (!slot) {
+      return res.status(404).json({ message: 'Slot not found' });
+    }
+
+    if (slot.venueId.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    if (slot.status === 'booked' || slot.status === 'locked') {
+      return res.status(400).json({ message: `Cannot change a slot that is currently ${slot.status}` });
+    }
+
+    slot.status = status;
+    slot.blockReason = status === 'blocked' ? (reason || 'Manual Block by Owner') : '';
+    await slot.save();
+
+    res.json(slot);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Block a slot manually
 // @route   PUT /api/slots/:id/block
 // @access  Private/Owner
@@ -292,6 +366,8 @@ module.exports = {
   createSlots,
   generateSlots,
   blockSlot,
+  getManagedSlots,
+  updateSlotStatus,
   lockSlots,
   unlockSlots,
   emergencyClose

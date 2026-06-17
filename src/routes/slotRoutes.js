@@ -5,6 +5,8 @@ const {
   createSlots, 
   generateSlots,
   blockSlot,
+  getManagedSlots,
+  updateSlotStatus,
   lockSlots,
   unlockSlots,
   emergencyClose
@@ -21,6 +23,9 @@ router.route('/generate')
 router.route('/venue/:venueId')
   .get(getSlotsByVenue);
 
+router.route('/manage')
+  .get(protect, authorizeRoles('owner', 'admin'), getManagedSlots);
+
 router.route('/lock')
   .post(protect, lockSlots);
 
@@ -32,5 +37,8 @@ router.route('/emergency-close')
 
 router.route('/:id/block')
   .put(protect, authorizeRoles('owner', 'admin'), blockSlot);
+
+router.route('/:id')
+  .put(protect, authorizeRoles('owner', 'admin'), updateSlotStatus);
 
 module.exports = router;
