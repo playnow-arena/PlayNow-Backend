@@ -1,7 +1,15 @@
 const Notification = require('../models/Notification');
 const { getIO } = require('../socket');
 
-const createNotification = async ({ userId, title, message, type, link = '', metadata = {} }) => {
+const createNotification = async ({
+  userId,
+  title,
+  message,
+  type,
+  link = '',
+  metadata = {},
+  dedupeKey
+}) => {
   try {
     // Check User preferences
     const User = require('../models/User');
@@ -15,7 +23,7 @@ const createNotification = async ({ userId, title, message, type, link = '', met
     }
 
     // Basic duplication guard for duplicate-sensitive events within a 1-minute window
-    if (type === 'booking' || type === 'match') {
+    if (!dedupeKey && (type === 'booking' || type === 'match')) {
       const oneMinuteAgo = new Date(Date.now() - 60000);
       const duplicate = await Notification.findOne({
         userId,
@@ -33,7 +41,8 @@ const createNotification = async ({ userId, title, message, type, link = '', met
       message,
       type,
       link,
-      metadata
+      metadata,
+      dedupeKey
     });
 
     try {
@@ -45,6 +54,9 @@ const createNotification = async ({ userId, title, message, type, link = '', met
 
     return notification;
   } catch (error) {
+    if (error.code === 11000 && dedupeKey) {
+      return Notification.findOne({ userId, dedupeKey });
+    }
     console.error('❌ [NOTIFICATION] Error creating notification:', error.message);
   }
 };

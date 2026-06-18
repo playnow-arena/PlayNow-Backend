@@ -1,16 +1,44 @@
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
+const User = require('./models/User');
 
 let io;
 
 const initSocket = (server) => {
+  const configuredOrigins = (process.env.FRONTEND_URL || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
   io = new Server(server, {
     cors: {
-      origin: "http://localhost:3000",
+      origin: configuredOrigins.length > 0 ? configuredOrigins : true,
       methods: ["GET", "POST"]
     }
   });
 
+  io.use(async (socket, next) => {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next();
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      socket.user = await User.findById(decoded.id).select('_id role roles playNowId');
+      next();
+    } catch (error) {
+      next(new Error('Invalid authentication token'));
+    }
+  });
+
   io.on('connection', (socket) => {
+    if (socket.user) {
+      socket.join(`user_${socket.user._id}`);
+      if (socket.user.role === 'owner' || socket.user.roles?.includes('owner')) {
+        socket.join(`owner_${socket.user._id}`);
+        if (socket.user.playNowId) socket.join(`owner_${socket.user.playNowId}`);
+      }
+    }
+
     console.log(`🔌 [SOCKET] New client connected: ${socket.id}`);
 
     // Health check for monitoring connection stability
@@ -20,14 +48,15 @@ const initSocket = (server) => {
 
     // Join room based on userId (for private notifications like new bookings)
     socket.on('join_owner_room', (ownerId) => {
-      if (!ownerId) return;
+      const allowedIds = [socket.user?._id?.toString(), socket.user?.playNowId].filter(Boolean);
+      if (!ownerId || !allowedIds.includes(ownerId.toString())) return;
       socket.join(`owner_${ownerId}`);
       console.log(`👤 [ROOM] Owner ${ownerId} joined: owner_${ownerId}`);
     });
 
     // Join room based on user DB ID (for user-specific real-time notifications)
     socket.on('join_user_room', (userId) => {
-      if (!userId) return;
+      if (!userId || socket.user?._id?.toString() !== userId.toString()) return;
       socket.join(`user_${userId}`);
       console.log(`👤 [ROOM] User joined room: user_${userId}`);
     });

@@ -91,7 +91,8 @@ const createBooking = async (req, res) => {
       message: `Your booking at ${venue.name} has been successfully confirmed!`,
       type: 'booking',
       link: '/dashboard',
-      metadata: { bookingId: booking._id, venueId }
+      metadata: { bookingId: booking._id, venueId },
+      dedupeKey: `booking:${booking._id}:confirmed:player`
     });
 
     await createNotification({
@@ -100,7 +101,18 @@ const createBooking = async (req, res) => {
       message: `A new booking has been made for ${venue.name} by ${req.user.name}`,
       type: 'booking',
       link: '/owner',
-      metadata: { bookingId: booking._id, venueId }
+      metadata: { bookingId: booking._id, venueId },
+      dedupeKey: `booking:${booking._id}:confirmed:owner`
+    });
+
+    await createNotification({
+      userId: req.user._id,
+      title: 'Payment Successful',
+      message: `Your payment of â‚¹${paidAmount} for ${venue.name} was successful.`,
+      type: 'booking',
+      link: '/dashboard',
+      metadata: { bookingId: booking._id, venueId, amount: paidAmount },
+      dedupeKey: `booking:${booking._id}:payment-success`
     });
 
     // --- REAL-TIME NOTIFICATION ---
@@ -232,6 +244,17 @@ const collectBookingBalance = async (req, res) => {
     booking.paymentStatus = 'completed';
     await booking.save();
 
+    const { createNotification } = require('./notificationController');
+    await createNotification({
+      userId: booking.userId,
+      title: 'Payment Completed',
+      message: `The remaining payment for your booking at ${booking.venueId.name} has been received.`,
+      type: 'booking',
+      link: '/dashboard',
+      metadata: { bookingId: booking._id, venueId: booking.venueId._id, amount: booking.totalAmount },
+      dedupeKey: `booking:${booking._id}:balance-payment-success`
+    });
+
     const populatedBooking = await Booking.findById(booking._id)
       .populate('userId', 'name phone playNowId')
       .populate('venueId', 'name location city area ownerId')
@@ -329,7 +352,8 @@ const cancelBooking = async (req, res) => {
         message: `Your booking at ${venue.name} has been cancelled.`,
         type: 'booking',
         link: '/dashboard',
-        metadata: { bookingId: booking._id, venueId: venue._id }
+        metadata: { bookingId: booking._id, venueId: venue._id },
+        dedupeKey: `booking:${booking._id}:cancelled:player`
       });
 
       await createNotification({
@@ -338,7 +362,8 @@ const cancelBooking = async (req, res) => {
         message: `A booking at ${venue.name} has been cancelled by the player.`,
         type: 'booking',
         link: '/owner',
-        metadata: { bookingId: booking._id, venueId: venue._id }
+        metadata: { bookingId: booking._id, venueId: venue._id },
+        dedupeKey: `booking:${booking._id}:cancelled:owner`
       });
 
       io.to(`owner_${venue.ownerId}`).emit('bookingCancelled', {

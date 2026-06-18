@@ -101,7 +101,8 @@ const createReview = async (req, res) => {
         message: `A user has rated "${venue.name}" with ${rating} stars!`,
         type: 'review',
         link: `/owner`, // Owner Dashboard path for checking details
-        metadata: { reviewId: review._id, venueId }
+        metadata: { reviewId: review._id, venueId },
+        dedupeKey: `review:${review._id}:received`
       });
     }
 

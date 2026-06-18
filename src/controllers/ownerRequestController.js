@@ -277,6 +277,17 @@ const approveOwnerRequest = async (req, res) => {
 
     await ownerRequest.save();
 
+    const { createNotification } = require('./notificationController');
+    await createNotification({
+      userId: owner._id,
+      title: 'Owner Request Approved',
+      message: `Your partner request for ${venue.name} has been approved.`,
+      type: 'system',
+      link: '/owner',
+      metadata: { ownerRequestId: ownerRequest._id, venueId: venue._id },
+      dedupeKey: `owner-request:${ownerRequest._id}:approved`
+    });
+
     const populatedRequest = await OwnerRequest.findById(ownerRequest._id)
       .populate('reviewedBy', 'name phone playNowId')
       .populate('linkedUserId', 'name phone email role playNowId')

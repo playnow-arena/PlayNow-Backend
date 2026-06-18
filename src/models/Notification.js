@@ -31,6 +31,10 @@ const notificationSchema = new mongoose.Schema({
   },
   metadata: {
     type: mongoose.Schema.Types.Mixed
+  },
+  dedupeKey: {
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true
@@ -38,5 +42,12 @@ const notificationSchema = new mongoose.Schema({
 
 // Compound index for optimized queries and count
 notificationSchema.index({ userId: 1, isRead: 1, createdAt: -1 });
+notificationSchema.index(
+  { userId: 1, dedupeKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { dedupeKey: { $type: 'string' } }
+  }
+);
 
 module.exports = mongoose.model('Notification', notificationSchema);
