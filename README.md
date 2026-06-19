@@ -31,6 +31,8 @@ This is the backend API for the Play Now sports booking application built with N
    PORT=5000
    MONGO_URI=mongodb://localhost:27017/playnow
    JWT_SECRET=supersecretplaynowkey
+   RAZORPAY_KEY_ID=rzp_test_your_key_id
+   RAZORPAY_KEY_SECRET=your_test_key_secret
    ```
 5. Start the development server:
    ```bash
@@ -58,11 +60,12 @@ This is the backend API for the Play Now sports booking application built with N
 - `PUT /api/slots/:id/block` - Manually block a slot (Owner only)
 
 ### Bookings
-- `POST /api/bookings` - Create a booking (Private)
+- `POST /api/bookings/create-order` - Create a Razorpay order (Private)
+- `POST /api/bookings/verify-payment` - Verify payment and create a confirmed booking (Private)
 - `GET /api/bookings/my` - Get user's bookings (Private)
 - `GET /api/bookings/owner` - Get bookings for owner's venues (Owner only)
 - `PUT /api/bookings/:id/cancel` - Cancel a booking (Private)
 
 ## Design Decisions
 - **Double Booking Prevention**: Before creating a booking, the API verifies that all requested slots have the status `available`. If any slot is missing or unavailable, the entire transaction is rejected, preventing partial or double bookings.
-- **Mock Payments**: Payment statuses are set to `completed` automatically as Razorpay integration is deferred for the MVP.
+- **Verified Payments**: Bookings are confirmed only after Razorpay signature and captured-payment verification.

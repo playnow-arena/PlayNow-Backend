@@ -10,6 +10,14 @@ const uniqueList = (items = []) => (
   ), [])
 );
 
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const toValidNumber = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+};
+
 const normalizeVenuePayload = (body = {}) => {
   const payload = { ...body };
 
@@ -35,13 +43,65 @@ const normalizeVenuePayload = (body = {}) => {
 // @access  Public
 const getVenues = async (req, res) => {
   try {
-    const { sport, location, maxPrice } = req.query;
-    
-    // Build query object
-    let query = {};
-    if (sport) query.sportTypes = { $in: [sport] };
-    if (location) query.location = { $regex: location, $options: 'i' };
-    if (maxPrice) query.pricePerHour = { $lte: Number(maxPrice) };
+    const {
+      search,
+      sport,
+      area,
+      location,
+      minPrice,
+      maxPrice,
+      minRating
+    } = req.query;
+    const clauses = [];
+    const areaFilter = area || location;
+    const parsedMinPrice = toValidNumber(minPrice);
+    const parsedMaxPrice = toValidNumber(maxPrice);
+    const parsedMinRating = toValidNumber(minRating);
+
+    if (search?.trim()) {
+      const searchRegex = new RegExp(escapeRegex(search.trim()), 'i');
+      clauses.push({
+        $or: [
+          { name: searchRegex },
+          { area: searchRegex },
+          { city: searchRegex },
+          { location: searchRegex }
+        ]
+      });
+    }
+
+    if (sport?.trim()) {
+      clauses.push({
+        sportTypes: new RegExp(`^${escapeRegex(sport.trim())}$`, 'i')
+      });
+    }
+
+    if (areaFilter?.trim()) {
+      const areaRegex = new RegExp(escapeRegex(areaFilter.trim()), 'i');
+      clauses.push({
+        $or: [
+          { area: areaRegex },
+          { city: areaRegex },
+          { location: areaRegex }
+        ]
+      });
+    }
+
+    const priceFilter = {};
+    if (parsedMinPrice !== null) priceFilter.$gte = parsedMinPrice;
+    if (parsedMaxPrice !== null) priceFilter.$lte = parsedMaxPrice;
+    if (Object.keys(priceFilter).length > 0) {
+      clauses.push({ pricePerHour: priceFilter });
+    }
+
+    if (parsedMinRating !== null) {
+      clauses.push({ rating: { $gte: parsedMinRating } });
+    }
+
+    const query = {
+      isActive: true,
+      ...(clauses.length > 0 ? { $and: clauses } : {})
+    };
 
     const venues = await Venue.find(query).populate('ownerId', 'name playNowId');
     res.json(venues);

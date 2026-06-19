@@ -273,25 +273,39 @@ const lockSlots = async (req, res) => {
     // Update to 'locked'
     await Slot.updateMany(
       { _id: { $in: slotIds } },
-      { $set: { status: 'locked' } }
+      {
+        $set: {
+          status: 'locked',
+          lockedBy: req.user._id,
+          lockExpiresAt: new Date(Date.now() + 15 * 60 * 1000)
+        }
+      }
     );
 
     // Emit real-time update
     const io = getIO();
     io.to(`venue_${venueId}`).emit('slotStatusChanged', { slotIds, status: 'locked' });
 
-    // Set timeout to auto-unlock after 10 minutes
+    // Set timeout to auto-unlock after the checkout window.
     setTimeout(async () => {
-      const stillLockedSlots = await Slot.find({ _id: { $in: slotIds }, status: 'locked' });
+      const stillLockedSlots = await Slot.find({
+        _id: { $in: slotIds },
+        status: 'locked',
+        lockedBy: req.user._id,
+        lockExpiresAt: { $lte: new Date() }
+      });
       if (stillLockedSlots.length > 0) {
         const stillLockedIds = stillLockedSlots.map(s => s._id);
         await Slot.updateMany(
           { _id: { $in: stillLockedIds } },
-          { $set: { status: 'available' } }
+          {
+            $set: { status: 'available' },
+            $unset: { lockedBy: '', lockExpiresAt: '' }
+          }
         );
         io.to(`venue_${venueId}`).emit('slotStatusChanged', { slotIds: stillLockedIds, status: 'available' });
       }
-    }, 10 * 60 * 1000); // 10 minutes
+    }, 15 * 60 * 1000);
 
     res.json({ message: 'Slots locked temporarily' });
   } catch (error) {
@@ -307,8 +321,11 @@ const unlockSlots = async (req, res) => {
     const { slotIds, venueId } = req.body;
 
     await Slot.updateMany(
-      { _id: { $in: slotIds }, status: 'locked' },
-      { $set: { status: 'available' } }
+      { _id: { $in: slotIds }, status: 'locked', lockedBy: req.user._id },
+      {
+        $set: { status: 'available' },
+        $unset: { lockedBy: '', lockExpiresAt: '' }
+      }
     );
 
     const io = getIO();

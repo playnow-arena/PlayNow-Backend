@@ -31,6 +31,15 @@ const slotSchema = new mongoose.Schema({
     enum: ['available', 'locked', 'booked', 'blocked'],
     default: 'available'
   },
+  lockedBy: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  lockExpiresAt: {
+    type: Date,
+    default: null
+  },
   blockReason: {
     type: String,
     default: ''

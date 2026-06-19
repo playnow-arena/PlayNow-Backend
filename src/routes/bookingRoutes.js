@@ -1,18 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const { 
-  createBooking, 
   getMyBookings, 
   getOwnerBookings, 
   getAdminBookings,
   collectBookingBalance,
   cancelBooking 
 } = require('../controllers/bookingController');
+const {
+  createRazorpayOrder,
+  verifyRazorpayPayment
+} = require('../controllers/paymentController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorizeRoles } = require('../middleware/roleMiddleware');
 
 router.route('/')
-  .post(protect, createBooking);
+  .post(protect, createRazorpayOrder);
+
+router.route('/create-order')
+  .post(protect, createRazorpayOrder);
+
+router.route('/verify-payment')
+  .post(protect, verifyRazorpayPayment);
 
 router.route('/my')
   .get(protect, getMyBookings);

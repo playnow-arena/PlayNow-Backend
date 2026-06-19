@@ -1,10 +1,11 @@
 const mongoose = require('mongoose');
 
-const bookingSchema = new mongoose.Schema({
+const paymentIntentSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.ObjectId,
     ref: 'User',
-    required: true
+    required: true,
+    index: true
   },
   venueId: {
     type: mongoose.Schema.ObjectId,
@@ -16,13 +17,13 @@ const bookingSchema = new mongoose.Schema({
     ref: 'Slot',
     required: true
   }],
-  totalAmount: {
-    type: Number,
-    required: true
-  },
   paymentType: {
     type: String,
     enum: ['full', 'advance'],
+    required: true
+  },
+  totalAmount: {
+    type: Number,
     required: true
   },
   paidAmount: {
@@ -33,36 +34,35 @@ const bookingSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  bookingStatus: {
-    type: String,
-    enum: ['confirmed', 'cancelled', 'completed'],
-    default: 'confirmed'
-  },
-  paymentStatus: {
-    type: String,
-    enum: ['pending', 'advance_paid', 'completed', 'refunded'],
-    default: 'pending'
-  },
   razorpayOrderId: {
     type: String,
-    unique: true,
-    sparse: true
+    required: true,
+    unique: true
   },
   razorpayPaymentId: {
     type: String,
     unique: true,
     sparse: true
   },
-  cancellationFee: {
-    type: Number,
-    default: 0
+  bookingId: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'Booking'
   },
-  refundAmount: {
-    type: Number,
-    default: 0
+  status: {
+    type: String,
+    enum: ['created', 'processing', 'completed', 'failed'],
+    default: 'created',
+    index: true
+  },
+  expiresAt: {
+    type: Date,
+    required: true,
+    index: true
   }
 }, {
   timestamps: true
 });
 
-module.exports = mongoose.model('Booking', bookingSchema);
+paymentIntentSchema.index({ userId: 1, status: 1, createdAt: -1 });
+
+module.exports = mongoose.model('PaymentIntent', paymentIntentSchema);
