@@ -42,10 +42,14 @@ const getPhoneVariants = (value) => {
 
 const duplicateMessageForError = (error) => {
   const duplicateField = Object.keys(error?.keyPattern || {})[0];
+  if (duplicateField === 'username') return 'Username already taken';
   if (duplicateField === 'phone') return 'This phone number is already registered. Please login.';
   if (duplicateField === 'email') return 'This email is already registered. Please login.';
   return 'An account already exists with these details. Please login.';
 };
+
+const normalizeUsername = (username) => String(username || '').trim().toLowerCase();
+const isValidUsername = (username) => /^[a-z0-9_.]{3,20}$/.test(username);
 
 const findExistingByEmailOrPhone = async (email, phone) => {
   const clauses = [];
@@ -60,11 +64,11 @@ const findExistingByEmailOrPhone = async (email, phone) => {
 // @access  Public
 const signup = async (req, res) => {
   try {
-    const { name, phone, email, password, confirmPassword } = req.body;
+    const { name, username, phone, email, password, confirmPassword } = req.body;
 
     // Input validation
-    if (!name || !email || !phone || !password) {
-      return res.status(400).json({ message: 'Please provide name, email, phone number, and password' });
+    if (!name || !username || !email || !phone || !password) {
+      return res.status(400).json({ message: 'Please provide name, username, email, phone number, and password' });
     }
 
     if (password.length < 6) {
@@ -76,6 +80,16 @@ const signup = async (req, res) => {
     }
 
     const sanitizedEmail = normalizeEmail(email);
+    const sanitizedUsername = normalizeUsername(username);
+    if (!isValidUsername(sanitizedUsername)) {
+      return res.status(400).json({ message: 'Username must be 3-20 characters and use lowercase letters, numbers, underscore, or dot only' });
+    }
+
+    const usernameExists = await User.findOne({ username: sanitizedUsername });
+    if (usernameExists) {
+      return res.status(400).json({ message: 'Username already taken' });
+    }
+
     const formattedPhone = normalizePhone(phone);
     if (!formattedPhone) {
       return res.status(400).json({ message: 'Please provide a valid 10-digit phone number' });
@@ -97,6 +111,7 @@ const signup = async (req, res) => {
     // Create user — always as 'player' (owners/admins are created via admin portal)
     const user = await User.create({
       name: name.trim(),
+      username: sanitizedUsername,
       phone: formattedPhone,
       email: sanitizedEmail,
       password,
@@ -110,6 +125,7 @@ const signup = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
+        username: user.username,
         playNowId: user.playNowId,
         role: user.role,
         token: generateToken(user._id),
@@ -159,6 +175,7 @@ const login = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
+        username: user.username,
         playNowId: user.playNowId,
         ownerId: user.ownerId,
         role: user.role, // Use role instead of roles if model uses singular

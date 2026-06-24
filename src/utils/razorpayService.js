@@ -1,6 +1,5 @@
 const crypto = require('crypto');
-
-const RAZORPAY_API_URL = 'https://api.razorpay.com/v1';
+const Razorpay = require('razorpay');
 
 const getCredentials = () => {
   const keyId = process.env.RAZORPAY_KEY_ID;
@@ -13,39 +12,27 @@ const getCredentials = () => {
   return { keyId, keySecret };
 };
 
-const getClientConfig = () => {
+const getClient = () => {
   const { keyId, keySecret } = getCredentials();
-  return {
-    auth: {
-      username: keyId,
-      password: keySecret
-    }
-  };
+  return new Razorpay({
+    key_id: keyId,
+    key_secret: keySecret
+  });
 };
 
-const createOrder = async ({ amount, receipt, notes = {} }) => {
-  const axios = require('axios');
-  const response = await axios.post(
-    `${RAZORPAY_API_URL}/orders`,
-    {
-      amount,
-      currency: 'INR',
-      receipt,
-      notes
-    },
-    getClientConfig()
-  );
-
-  return response.data;
+const createOrder = async ({ amount, currency = 'INR', receipt, notes = {} }) => {
+  const client = getClient();
+  return client.orders.create({
+    amount,
+    currency,
+    receipt,
+    notes
+  });
 };
 
 const getPayment = async (paymentId) => {
-  const axios = require('axios');
-  const response = await axios.get(
-    `${RAZORPAY_API_URL}/payments/${paymentId}`,
-    getClientConfig()
-  );
-  return response.data;
+  const client = getClient();
+  return client.payments.fetch(paymentId);
 };
 
 const verifyPaymentSignature = ({ orderId, paymentId, signature }) => {

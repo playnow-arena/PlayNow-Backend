@@ -26,10 +26,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
 app.use('/api/auth', require('./src/routes/authRoutes'));
+app.use('/api/users', require('./src/routes/userRoutes'));
 app.use('/api/venues', require('./src/routes/venueRoutes'));
 app.use('/api/uploads', require('./src/routes/uploadRoutes'));
 app.use('/api/slots', require('./src/routes/slotRoutes'));
 app.use('/api/bookings', require('./src/routes/bookingRoutes'));
+app.use('/api/payments', require('./src/routes/paymentRoutes'));
 app.use('/api/matches', require('./src/routes/matchRoutes'));
 app.use('/api/owner-requests', require('./src/routes/ownerRequestRoutes'));
 app.use('/api/recurring-block-rules', require('./src/routes/recurringBlockRuleRoutes'));

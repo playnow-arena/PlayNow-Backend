@@ -14,6 +14,40 @@ const fail = (message, statusCode) => {
   throw error;
 };
 
+const normalizePaymentFields = (body = {}) => ({
+  razorpayOrderId: body.razorpayOrderId || body.razorpay_order_id,
+  razorpayPaymentId: body.razorpayPaymentId || body.razorpay_payment_id,
+  razorpaySignature: body.razorpaySignature || body.razorpay_signature
+});
+
+const formatOrderResponse = (order) => ({
+  success: true,
+  order_id: order.id,
+  orderId: order.id,
+  amount: order.amount,
+  currency: order.currency,
+  key_id: razorpayService.getPublicKeyId(),
+  keyId: razorpayService.getPublicKeyId()
+});
+
+const createStandardOrder = async (req, res) => {
+  const amount = Number(req.body.amount);
+  const currency = req.body.currency || 'INR';
+
+  if (!Number.isInteger(amount) || amount < 100) {
+    return res.status(400).json({ success: false, message: 'Amount must be at least 100 paise' });
+  }
+
+  const order = await razorpayService.createOrder({
+    amount,
+    currency,
+    receipt: req.body.receipt || `playnow_${Date.now()}`,
+    notes: req.body.notes || {}
+  });
+
+  return res.status(201).json(formatOrderResponse(order));
+};
+
 const getBookingContext = async ({ userId, venueId, slotIds, paymentType }) => {
   if (!venueId || !Array.isArray(slotIds) || slotIds.length === 0) {
     fail('Venue and at least one slot must be selected', 400);
@@ -145,6 +179,14 @@ const sendBookingSuccessEvents = async ({ booking, venue, slots, user }) => {
 
 const createRazorpayOrder = async (req, res) => {
   try {
+    if (req.body.amount !== undefined && !req.body.venueId) {
+      return createStandardOrder(req, res);
+    }
+
+    if (!req.user?._id) {
+      return res.status(401).json({ message: 'Login is required to create a booking payment order' });
+    }
+
     const context = await getBookingContext({
       userId: req.user._id,
       venueId: req.body.venueId,
@@ -162,7 +204,10 @@ const createRazorpayOrder = async (req, res) => {
     });
     if (existingIntent) {
       return res.json({
+        success: true,
+        key_id: razorpayService.getPublicKeyId(),
         keyId: razorpayService.getPublicKeyId(),
+        order_id: existingIntent.razorpayOrderId,
         orderId: existingIntent.razorpayOrderId,
         amount: Math.round(existingIntent.paidAmount * 100),
         currency: 'INR'
@@ -171,6 +216,7 @@ const createRazorpayOrder = async (req, res) => {
 
     const order = await razorpayService.createOrder({
       amount: Math.round(context.paidAmount * 100),
+      currency: 'INR',
       receipt: `pn_${req.user._id.toString().slice(-8)}_${Date.now()}`,
       notes: {
         userId: req.user._id.toString(),
@@ -191,15 +237,12 @@ const createRazorpayOrder = async (req, res) => {
       expiresAt: context.lockExpiresAt
     });
 
-    res.status(201).json({
-      keyId: razorpayService.getPublicKeyId(),
-      orderId: order.id,
-      amount: order.amount,
-      currency: order.currency
-    });
+    res.status(201).json(formatOrderResponse(order));
   } catch (error) {
     res.status(error.statusCode || 500).json({
-      message: error.response?.data?.error?.description
+      success: false,
+      message: error.error?.description
+        || error.response?.data?.error?.description
         || error.message
         || 'Unable to create payment order'
     });
@@ -207,7 +250,7 @@ const createRazorpayOrder = async (req, res) => {
 };
 
 const verifyRazorpayPayment = async (req, res) => {
-  const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+  const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = normalizePaymentFields(req.body);
   let intent;
 
   try {
@@ -215,11 +258,32 @@ const verifyRazorpayPayment = async (req, res) => {
       return res.status(400).json({ message: 'Payment verification details are required' });
     }
 
-    intent = await PaymentIntent.findOne({ razorpayOrderId, userId: req.user._id });
-    if (!intent) return res.status(404).json({ message: 'Payment order not found' });
+    intent = req.user?._id
+      ? await PaymentIntent.findOne({ razorpayOrderId, userId: req.user._id })
+      : null;
+    if (!intent) {
+      const signatureIsValid = razorpayService.verifyPaymentSignature({
+        orderId: razorpayOrderId,
+        paymentId: razorpayPaymentId,
+        signature: razorpaySignature
+      });
+      if (!signatureIsValid) {
+        return res.status(400).json({ success: false, message: 'Payment signature verification failed' });
+      }
+
+      return res.json({
+        success: true,
+        razorpay_order_id: razorpayOrderId,
+        razorpay_payment_id: razorpayPaymentId
+      });
+    }
 
     if (intent.status === 'completed' && intent.bookingId) {
-      return res.json(await Booking.findById(intent.bookingId));
+      const existingBooking = await Booking.findById(intent.bookingId);
+      if (!existingBooking) {
+        return res.status(404).json({ success: false, message: 'Booking not found for this payment' });
+      }
+      return res.json({ success: true, booking: existingBooking, ...existingBooking.toObject() });
     }
 
     const signatureIsValid = razorpayService.verifyPaymentSignature({
@@ -228,7 +292,7 @@ const verifyRazorpayPayment = async (req, res) => {
       signature: razorpaySignature
     });
     if (!signatureIsValid) {
-      return res.status(400).json({ message: 'Payment signature verification failed' });
+      return res.status(400).json({ success: false, message: 'Payment signature verification failed' });
     }
 
     const payment = await razorpayService.getPayment(razorpayPaymentId);
@@ -238,7 +302,7 @@ const verifyRazorpayPayment = async (req, res) => {
       || payment.currency !== 'INR'
       || payment.status !== 'captured'
     ) {
-      return res.status(400).json({ message: 'Payment could not be verified as captured' });
+      return res.status(400).json({ success: false, message: 'Payment could not be verified as captured' });
     }
 
     const existingBooking = await Booking.findOne({
@@ -258,7 +322,7 @@ const verifyRazorpayPayment = async (req, res) => {
           }
         }
       );
-      return res.json(existingBooking);
+      return res.json({ success: true, booking: existingBooking, ...existingBooking.toObject() });
     }
 
     intent = await PaymentIntent.findOneAndUpdate(
@@ -349,7 +413,7 @@ const verifyRazorpayPayment = async (req, res) => {
       console.error('[PAYMENT] Booking confirmed but success event failed:', eventError.message);
     }
 
-    res.status(201).json(booking);
+    res.status(201).json({ success: true, booking, ...booking.toObject() });
   } catch (error) {
     if (intent?.status === 'processing') {
       await PaymentIntent.updateOne(
@@ -358,6 +422,7 @@ const verifyRazorpayPayment = async (req, res) => {
       );
     }
     res.status(error.code === 11000 ? 409 : 500).json({
+      success: false,
       message: error.code === 11000
         ? 'Payment has already been used for a booking'
         : error.message

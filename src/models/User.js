@@ -10,6 +10,10 @@ const normalizePhone = (phone) => {
   const mobileDigits = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
   return mobileDigits.length === 10 ? `+91${mobileDigits}` : String(phone || '').trim();
 };
+const normalizeUsername = (username) => {
+  const normalized = String(username || '').trim().toLowerCase();
+  return normalized || undefined;
+};
 
 const userSchema = new mongoose.Schema({
   name: {
@@ -59,7 +63,13 @@ const userSchema = new mongoose.Schema({
   username: {
     type: String,
     unique: true,
-    sparse: true // Only owners/admins have this
+    sparse: true,
+    lowercase: true,
+    trim: true,
+    set: normalizeUsername,
+    minlength: [3, 'Username must be at least 3 characters'],
+    maxlength: [20, 'Username cannot be more than 20 characters'],
+    match: [/^[a-z0-9_.]+$/, 'Username can only contain lowercase letters, numbers, underscore, and dot']
   },
   role: {
     type: String,
@@ -76,6 +86,30 @@ const userSchema = new mongoose.Schema({
       match: { type: Boolean, default: true },
       review: { type: Boolean, default: true },
       system: { type: Boolean, default: true }
+    },
+    bio: {
+      type: String,
+      maxlength: [300, 'Bio cannot be more than 300 characters'],
+      default: ''
+    },
+    preferredSports: {
+      type: [String],
+      default: []
+    },
+    city: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    area: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    location: {
+      type: String,
+      trim: true,
+      default: ''
     },
     resetPasswordToken: String,
     resetPasswordExpire: Date
