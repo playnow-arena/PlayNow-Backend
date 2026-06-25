@@ -8,12 +8,14 @@ const normalizeEmail = (email) => {
 const normalizePhone = (phone) => {
   const digits = String(phone || '').replace(/\D/g, '');
   const mobileDigits = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
-  return mobileDigits.length === 10 ? `+91${mobileDigits}` : String(phone || '').trim();
+  return /^[6-9]\d{9}$/.test(mobileDigits) ? `+91${mobileDigits}` : String(phone || '').trim();
 };
 const normalizeUsername = (username) => {
   const normalized = String(username || '').trim().toLowerCase();
   return normalized || undefined;
 };
+const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(email || '').trim().toLowerCase());
+const isValidIndianMobile = (phone) => /^\+91[6-9]\d{9}$/.test(normalizePhone(phone));
 
 const userSchema = new mongoose.Schema({
   name: {
@@ -24,17 +26,21 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please add a phone number'],
     unique: true,
-    set: normalizePhone
+    set: normalizePhone,
+    validate: {
+      validator: isValidIndianMobile,
+      message: 'Enter a valid Indian mobile number'
+    }
   },
   email: {
     type: String,
     unique: true,
     sparse: true, // Allow multiple null/undefined values
     set: normalizeEmail,
-    match: [
-      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-      'Please add a valid email'
-    ]
+    validate: {
+      validator: (value) => !value || isValidEmail(value),
+      message: 'Enter a valid email address'
+    }
   },
   password: {
     type: String,
@@ -69,7 +75,7 @@ const userSchema = new mongoose.Schema({
     set: normalizeUsername,
     minlength: [3, 'Username must be at least 3 characters'],
     maxlength: [20, 'Username cannot be more than 20 characters'],
-    match: [/^[a-z0-9_.]+$/, 'Username can only contain lowercase letters, numbers, underscore, and dot']
+    match: [/^[a-z0-9._]{3,20}$/, 'Username can use lowercase letters, numbers, dot and underscore only']
   },
   role: {
     type: String,

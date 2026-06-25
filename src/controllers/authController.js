@@ -24,7 +24,7 @@ const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g
 const normalizePhone = (phone) => {
   const digits = String(phone || '').replace(/\D/g, '');
   const mobileDigits = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
-  return mobileDigits.length === 10 ? `+91${mobileDigits}` : '';
+  return /^[6-9]\d{9}$/.test(mobileDigits) ? `+91${mobileDigits}` : '';
 };
 
 const getPhoneVariants = (value) => {
@@ -43,13 +43,14 @@ const getPhoneVariants = (value) => {
 const duplicateMessageForError = (error) => {
   const duplicateField = Object.keys(error?.keyPattern || {})[0];
   if (duplicateField === 'username') return 'Username already taken';
-  if (duplicateField === 'phone') return 'This phone number is already registered. Please login.';
-  if (duplicateField === 'email') return 'This email is already registered. Please login.';
+  if (duplicateField === 'phone') return 'Phone number already registered';
+  if (duplicateField === 'email') return 'Email already registered';
   return 'An account already exists with these details. Please login.';
 };
 
 const normalizeUsername = (username) => String(username || '').trim().toLowerCase();
-const isValidUsername = (username) => /^[a-z0-9_.]{3,20}$/.test(username);
+const isValidUsername = (username) => /^[a-z0-9._]{3,20}$/.test(username);
+const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(email || '').trim().toLowerCase());
 
 const findExistingByEmailOrPhone = async (email, phone) => {
   const clauses = [];
@@ -80,9 +81,13 @@ const signup = async (req, res) => {
     }
 
     const sanitizedEmail = normalizeEmail(email);
+    if (!isValidEmail(sanitizedEmail)) {
+      return res.status(400).json({ message: 'Enter a valid email address' });
+    }
+
     const sanitizedUsername = normalizeUsername(username);
     if (!isValidUsername(sanitizedUsername)) {
-      return res.status(400).json({ message: 'Username must be 3-20 characters and use lowercase letters, numbers, underscore, or dot only' });
+      return res.status(400).json({ message: 'Username can use lowercase letters, numbers, dot and underscore only' });
     }
 
     const usernameExists = await User.findOne({ username: sanitizedUsername });
@@ -92,7 +97,7 @@ const signup = async (req, res) => {
 
     const formattedPhone = normalizePhone(phone);
     if (!formattedPhone) {
-      return res.status(400).json({ message: 'Please provide a valid 10-digit phone number' });
+      return res.status(400).json({ message: 'Enter a valid Indian mobile number' });
     }
 
     // Check if user exists
@@ -100,9 +105,9 @@ const signup = async (req, res) => {
 
     if (userExists) {
       if (normalizeEmail(userExists.email) === sanitizedEmail) {
-        return res.status(400).json({ message: 'This email is already registered. Please login.' });
+        return res.status(400).json({ message: 'Email already registered' });
       }
-      return res.status(400).json({ message: 'This phone number is already registered. Please login.' });
+      return res.status(400).json({ message: 'Phone number already registered' });
     }
 
     // Generate unique PlayNow ID
@@ -433,7 +438,7 @@ location: updatedUser.location,
 // @access  Public
 const forgotPassword = async (req, res) => {
   return res.status(501).json({
-    message: 'Password reset is not available yet. Please contact PlayNow support.'
+    message: 'Password reset is not automated yet. Contact PlayNow support to reset your account.'
   });
 };
 
