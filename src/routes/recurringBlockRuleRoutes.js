@@ -6,16 +6,18 @@ const { protect } = require('../middleware/authMiddleware');
 const { authorizeRoles } = require('../middleware/roleMiddleware');
 
 const canManageVenue = async (req, venueId) => {
-  const venue = await Venue.findById(venueId).select('ownerId');
+  const venue = await Venue.findById(venueId).select('ownerId managerIds');
   if (!venue) return { allowed: false, status: 404, message: 'Venue not found' };
-  if (req.user.role === 'admin' || venue.ownerId.toString() === req.user._id.toString()) {
+  const isManager = req.user.role === 'manager'
+    && (venue.managerIds || []).some((managerId) => managerId.toString() === req.user._id.toString());
+  if (req.user.role === 'admin' || venue.ownerId.toString() === req.user._id.toString() || isManager) {
     return { allowed: true, venue };
   }
   return { allowed: false, status: 403, message: 'Not authorized for this venue' };
 };
 
 router.route('/')
-  .get(protect, authorizeRoles('owner', 'admin'), async (req, res) => {
+  .get(protect, authorizeRoles('owner', 'manager', 'admin'), async (req, res) => {
     try {
       const query = {};
 
@@ -24,7 +26,10 @@ router.route('/')
       }
 
       if (req.user.role !== 'admin') {
-        const venues = await Venue.find({ ownerId: req.user._id }).select('_id');
+        const venueQuery = req.user.role === 'manager'
+          ? { managerIds: req.user._id }
+          : { ownerId: req.user._id };
+        const venues = await Venue.find(venueQuery).select('_id');
         query.venueId = { $in: venues.map((venue) => venue._id) };
       }
 
@@ -37,7 +42,7 @@ router.route('/')
       res.status(500).json({ message: error.message });
     }
   })
-  .post(protect, authorizeRoles('owner', 'admin'), async (req, res) => {
+  .post(protect, authorizeRoles('owner', 'manager', 'admin'), async (req, res) => {
     try {
       const access = await canManageVenue(req, req.body.venueId);
       if (!access.allowed) {
@@ -64,7 +69,7 @@ router.route('/')
   });
 
 router.route('/:id')
-  .put(protect, authorizeRoles('owner', 'admin'), async (req, res) => {
+  .put(protect, authorizeRoles('owner', 'manager', 'admin'), async (req, res) => {
     try {
       const rule = await RecurringBlockRule.findById(req.params.id);
       if (!rule) {
@@ -94,7 +99,7 @@ router.route('/:id')
       res.status(400).json({ message: error.message });
     }
   })
-  .delete(protect, authorizeRoles('owner', 'admin'), async (req, res) => {
+  .delete(protect, authorizeRoles('owner', 'manager', 'admin'), async (req, res) => {
     try {
       const rule = await RecurringBlockRule.findById(req.params.id);
       if (!rule) {

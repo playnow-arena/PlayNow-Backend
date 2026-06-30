@@ -45,6 +45,7 @@ const duplicateMessageForError = (error) => {
   if (duplicateField === 'username') return 'Username already taken';
   if (duplicateField === 'phone') return 'Phone number already registered';
   if (duplicateField === 'email') return 'Email already registered';
+  if (duplicateField === 'playNowId') return 'Unable to generate a unique PlayNow ID. Please try again.';
   return 'An account already exists with these details. Please login.';
 };
 
@@ -58,6 +59,26 @@ const findExistingByEmailOrPhone = async (email, phone) => {
   if (phone) clauses.push({ phone: { $in: getPhoneVariants(phone) } });
   if (!clauses.length) return null;
   return User.findOne({ $or: clauses });
+};
+
+const createUserWithGeneratedPlayNowId = async (userData, attempts = 3) => {
+  let lastError;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await User.create({
+        ...userData,
+        playNowId: await generatePlayNowId()
+      });
+    } catch (error) {
+      lastError = error;
+      if (!(error?.code === 11000 && error?.keyPattern?.playNowId)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
 };
 
 // @desc    Register a new player user
@@ -110,17 +131,13 @@ const signup = async (req, res) => {
       return res.status(400).json({ message: 'Phone number already registered' });
     }
 
-    // Generate unique PlayNow ID
-    const playNowId = await generatePlayNowId();
-
     // Create user — always as 'player' (owners/admins are created via admin portal)
-    const user = await User.create({
+    const user = await createUserWithGeneratedPlayNowId({
       name: name.trim(),
       username: sanitizedUsername,
       phone: formattedPhone,
       email: sanitizedEmail,
       password,
-      playNowId,
       role: 'player'
     });
 
@@ -232,12 +249,10 @@ const phoneAuth = async (req, res) => {
       // Auto-create only player accounts via Firebase OTP.
       // Admins/Owners must be pre-created in the database by an administrator.
       isNewUser       = true;
-      const playNowId = await generatePlayNowId();
-      user = await User.create({
-        name:         name ? name.trim() : `Player_${playNowId.split('-')[1]}`,
+      user = await createUserWithGeneratedPlayNowId({
+        name:         name ? name.trim() : 'Player',
         phone:        formattedPhone,
         firebaseId:   uid,
-        playNowId,
         profilePhoto: profilePhoto || 'default.jpg',
         role:         'player',   // Only players are auto-created via Firebase OTP
       });
@@ -319,11 +334,9 @@ const verifyMockOtp = async (req, res) => {
         });
       }
       isNewUser       = true;
-      const playNowId = await generatePlayNowId();
-      user = await User.create({
+      user = await createUserWithGeneratedPlayNowId({
         name:         name.trim(),
         phone:        formattedPhone,
-        playNowId,
         profilePhoto: 'default.jpg',
         role:         'player',   // Only players are auto-created via OTP
       });

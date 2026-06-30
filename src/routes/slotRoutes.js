@@ -15,16 +15,16 @@ const { protect } = require('../middleware/authMiddleware');
 const { authorizeRoles } = require('../middleware/roleMiddleware');
 
 router.route('/')
-  .post(protect, authorizeRoles('owner', 'admin'), createSlots);
+  .post(protect, authorizeRoles('owner', 'manager', 'admin'), createSlots);
 
 router.route('/generate')
-  .post(protect, authorizeRoles('owner', 'admin'), generateSlots);
+  .post(protect, authorizeRoles('owner', 'manager', 'admin'), generateSlots);
 
 router.route('/venue/:venueId')
   .get(getSlotsByVenue);
 
 router.route('/manage')
-  .get(protect, authorizeRoles('owner', 'admin'), getManagedSlots);
+  .get(protect, authorizeRoles('owner', 'manager', 'admin'), getManagedSlots);
 
 router.route('/lock')
   .post(protect, lockSlots);
@@ -33,12 +33,12 @@ router.route('/unlock')
   .post(protect, unlockSlots);
 
 router.route('/emergency-close')
-  .post(protect, authorizeRoles('owner', 'admin'), emergencyClose);
+  .post(protect, authorizeRoles('owner', 'manager', 'admin'), emergencyClose);
 
 router.route('/:id/block')
-  .put(protect, authorizeRoles('owner', 'admin'), blockSlot);
+  .put(protect, authorizeRoles('owner', 'manager', 'admin'), blockSlot);
 
 router.route('/:id')
-  .put(protect, authorizeRoles('owner', 'admin'), updateSlotStatus);
+  .put(protect, authorizeRoles('owner', 'manager', 'admin'), updateSlotStatus);
 
 module.exports = router;

@@ -76,6 +76,7 @@ const venueSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  // Real manager login access. contacts.manager is display/contact info only.
   managerIds: [{
     type: mongoose.Schema.ObjectId,
     ref: 'User'

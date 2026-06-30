@@ -4,6 +4,18 @@ const Venue = require('../models/Venue');
 const { getIO } = require('../socket');
 const n8nService = require('../utils/n8nService');
 
+const venueAccessQueryForUser = (user) => {
+  if (user.role === 'admin') return {};
+  if (user.role === 'manager') return { managerIds: user._id };
+  return { ownerId: user._id };
+};
+
+const canManageVenue = (venue, user) => (
+  user.role === 'admin'
+  || venue.ownerId?.toString() === user._id.toString()
+  || (user.role === 'manager' && (venue.managerIds || []).some((managerId) => managerId.toString() === user._id.toString()))
+);
+
 // @desc    Create a booking
 // @route   POST /api/bookings
 // @access  Private
@@ -171,8 +183,7 @@ const getMyBookings = async (req, res) => {
 // @access  Private/Owner
 const getOwnerBookings = async (req, res) => {
   try {
-    // Find venues owned by this user
-    const venues = await Venue.find({ ownerId: req.user._id }).select('_id');
+    const venues = await Venue.find(venueAccessQueryForUser(req.user)).select('_id');
     const venueIds = venues.map(v => v._id);
 
     const bookings = await Booking.find({ venueId: { $in: venueIds } })
@@ -235,7 +246,7 @@ const collectBookingBalance = async (req, res) => {
       return res.status(400).json({ message: 'Cannot collect balance for cancelled booking' });
     }
 
-    if (req.user.role !== 'admin' && booking.venueId.ownerId.toString() !== req.user._id.toString()) {
+    if (!canManageVenue(booking.venueId, req.user)) {
       return res.status(403).json({ message: 'Not authorized to collect this balance' });
     }
 

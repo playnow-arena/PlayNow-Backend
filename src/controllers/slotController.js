@@ -2,6 +2,17 @@ const Slot = require('../models/Slot');
 const Venue = require('../models/Venue');
 const { getIO } = require('../socket');
 
+const canManageVenue = (venue, user) => (
+  user.role === 'admin'
+  || venue.ownerId?.toString() === user._id.toString()
+  || (user.role === 'manager' && (venue.managerIds || []).some((managerId) => managerId.toString() === user._id.toString()))
+);
+
+const venueAccessQueryForUser = (user) => {
+  if (user.role === 'admin') return {};
+  if (user.role === 'manager') return { managerIds: user._id };
+  return { ownerId: user._id };
+};
 
 // @desc    Get slots for a venue
 // @route   GET /api/slots/venue/:venueId
@@ -38,7 +49,7 @@ const createSlots = async (req, res) => {
       return res.status(404).json({ message: 'Venue not found' });
     }
 
-    if (venue.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (!canManageVenue(venue, req.user)) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -93,7 +104,7 @@ const generateSlots = async (req, res) => {
       return res.status(404).json({ message: 'Venue not found' });
     }
 
-    if (venue.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (!canManageVenue(venue, req.user)) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -161,12 +172,12 @@ const getManagedSlots = async (req, res) => {
       if (!venue) {
         return res.status(404).json({ message: 'Venue not found' });
       }
-      if (venue.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      if (!canManageVenue(venue, req.user)) {
         return res.status(403).json({ message: 'Not authorized' });
       }
       query.venueId = venueId;
     } else if (req.user.role !== 'admin') {
-      const venues = await Venue.find({ ownerId: req.user._id }).select('_id');
+      const venues = await Venue.find(venueAccessQueryForUser(req.user)).select('_id');
       query.venueId = { $in: venues.map((venue) => venue._id) };
     }
 
@@ -204,7 +215,7 @@ const updateSlotStatus = async (req, res) => {
       return res.status(404).json({ message: 'Slot not found' });
     }
 
-    if (slot.venueId.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (!canManageVenue(slot.venueId, req.user)) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -234,7 +245,7 @@ const blockSlot = async (req, res) => {
       return res.status(404).json({ message: 'Slot not found' });
     }
 
-    if (slot.venueId.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (!canManageVenue(slot.venueId, req.user)) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -349,7 +360,7 @@ const emergencyClose = async (req, res) => {
       return res.status(404).json({ message: 'Venue not found' });
     }
 
-    if (venue.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (!canManageVenue(venue, req.user)) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
