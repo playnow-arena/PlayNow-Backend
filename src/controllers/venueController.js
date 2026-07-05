@@ -1,4 +1,5 @@
 const Venue = require('../models/Venue');
+const User = require('../models/User');
 
 const toList = (value) => (Array.isArray(value) ? value : String(value || '').split(','))
   .map((item) => item.trim())
@@ -36,6 +37,84 @@ const normalizeVenuePayload = (body = {}) => {
   }
 
   return payload;
+};
+
+const normalizeOwnerPhone = (phone) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  const mobileDigits = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
+  return /^[6-9]\d{9}$/.test(mobileDigits) ? `+91${mobileDigits}` : '';
+};
+
+const stripOwnerSelectionFields = (payload) => {
+  delete payload.ownerUserId;
+  delete payload.selectedOwnerId;
+  delete payload.ownerPhone;
+  delete payload.ownerEmail;
+};
+
+const findOwnerUser = async (payload = {}) => {
+  const ownerUserId = String(payload.ownerUserId || payload.selectedOwnerId || payload.ownerId || '').trim();
+  const ownerEmail = String(payload.ownerEmail || '').trim().toLowerCase();
+  const ownerPhone = String(payload.ownerPhone || '').trim();
+  const normalizedPhone = normalizeOwnerPhone(ownerPhone);
+
+  if (ownerUserId && /^[a-f\d]{24}$/i.test(ownerUserId)) {
+    const user = await User.findById(ownerUserId);
+    if (user) return user;
+  }
+
+  const clauses = [];
+  if (ownerEmail) clauses.push({ email: ownerEmail });
+  if (normalizedPhone) {
+    const phoneDigits = normalizedPhone.slice(3);
+    clauses.push({ phone: { $in: uniqueList([normalizedPhone, phoneDigits, ownerPhone]) } });
+  }
+
+  return clauses.length > 0 ? User.findOne({ $or: clauses }) : null;
+};
+
+const resolveVenueOwnerId = async (req, payload = {}, existingVenue = null) => {
+  if (req.user.role !== 'admin') {
+    return req.user._id;
+  }
+
+  const hasOwnerSelection = Boolean(
+    payload.ownerUserId
+    || payload.selectedOwnerId
+    || payload.ownerPhone
+    || payload.ownerEmail
+    || payload.ownerId
+  );
+
+  if (!hasOwnerSelection && existingVenue?.ownerId) {
+    return existingVenue.ownerId;
+  }
+
+  if (!hasOwnerSelection) {
+    const error = new Error('Select an existing PlayNow user as venue owner');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const ownerUser = await findOwnerUser(payload);
+  if (!ownerUser) {
+    const error = new Error('Selected owner user not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (ownerUser.role === 'manager') {
+    const error = new Error('Manager accounts cannot be assigned as venue owner');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (ownerUser.role === 'player') {
+    ownerUser.role = 'owner';
+    await ownerUser.save();
+  }
+
+  return ownerUser._id;
 };
 
 // @desc    Get all venues (with filters)
@@ -130,15 +209,15 @@ const getVenueById = async (req, res) => {
 // @access  Private/Owner
 const createVenue = async (req, res) => {
   try {
-    req.body = normalizeVenuePayload(req.body);
+    const payload = normalizeVenuePayload(req.body);
 
-    // Add user as ownerId
-    req.body.ownerId = req.user._id;
+    payload.ownerId = await resolveVenueOwnerId(req, payload);
+    stripOwnerSelectionFields(payload);
 
-    const venue = await Venue.create(req.body);
+    const venue = await Venue.create(payload);
     res.status(201).json(venue);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(error.statusCode || 400).json({ message: error.message });
   }
 };
 
@@ -147,7 +226,7 @@ const createVenue = async (req, res) => {
 // @access  Private/Owner
 const updateVenue = async (req, res) => {
   try {
-    req.body = normalizeVenuePayload(req.body);
+    const payload = normalizeVenuePayload(req.body);
 
     let venue = await Venue.findById(req.params.id);
 
@@ -160,14 +239,21 @@ const updateVenue = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to update this venue' });
     }
 
-    venue = await Venue.findByIdAndUpdate(req.params.id, req.body, {
+    if (req.user.role === 'admin') {
+      payload.ownerId = await resolveVenueOwnerId(req, payload, venue);
+    } else {
+      delete payload.ownerId;
+    }
+    stripOwnerSelectionFields(payload);
+
+    venue = await Venue.findByIdAndUpdate(req.params.id, payload, {
       new: true,
       runValidators: true
     });
 
     res.json(venue);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(error.statusCode || 400).json({ message: error.message });
   }
 };
 
