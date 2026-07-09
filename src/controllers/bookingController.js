@@ -6,14 +6,12 @@ const n8nService = require('../utils/n8nService');
 
 const venueAccessQueryForUser = (user) => {
   if (user.role === 'admin') return {};
-  if (user.role === 'manager') return { managerIds: user._id };
   return { ownerId: user._id };
 };
 
 const canManageVenue = (venue, user) => (
   user.role === 'admin'
   || venue.ownerId?.toString() === user._id.toString()
-  || (user.role === 'manager' && (venue.managerIds || []).some((managerId) => managerId.toString() === user._id.toString()))
 );
 
 // @desc    Create a booking

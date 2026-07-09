@@ -103,10 +103,6 @@ const ownerRequestSchema = new mongoose.Schema({
       type: contactSchema,
       default: {}
     },
-    manager: {
-      type: contactSchema,
-      default: {}
-    },
     incharge: {
       type: contactSchema,
       default: {}

@@ -20,6 +20,7 @@ const { protect } = require('../middleware/authMiddleware');
 router.post('/signup', signup);
 router.post('/login',  login);
 router.post('/forgot-password', forgotPassword);
+router.post('/reset-password/:token', resetPassword);
 router.post('/reset-password', resetPassword);
 
 // ── Firebase Phone OTP (primary) ─────────────────────────────────────────────

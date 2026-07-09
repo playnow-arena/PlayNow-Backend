@@ -4,12 +4,21 @@ const crypto = require('crypto');
 const generatePlayNowId = require('../utils/generatePlayNowId');
 const bcrypt = require('bcryptjs');
 const admin = require('../config/firebaseAdmin');
+const { sendPasswordResetEmail, sendAccountLockedEmail } = require('../utils/emailService');
 
 // ── Mock OTP store (development fallback) ────────────────────────────────────
 /** In-memory OTP store: Map<phone, { otp, expiresAt }> */
 const otpStore = new Map();
 const DEV_OTP       = '123456';
 const OTP_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+const RESET_TOKEN_EXPIRY_MS = 15 * 60 * 1000;
+const LOGIN_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const LOGIN_RATE_LIMIT_MAX = 10;
+const ACCOUNT_LOCK_MS = 15 * 60 * 1000;
+const GENERIC_LOGIN_ERROR = 'Invalid email or password.';
+const FORGOT_PASSWORD_RESPONSE = 'If an account exists, a password reset link has been sent.';
+const loginIpAttempts = new Map();
+const loginAccountAttempts = new Map();
 
 // Generate JWT
 const generateToken = (id) => {
@@ -79,6 +88,101 @@ const createUserWithGeneratedPlayNowId = async (userData, attempts = 3) => {
   }
 
   throw lastError;
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getClientIp = (req) => (
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.ip
+  || req.socket?.remoteAddress
+  || 'unknown'
+);
+
+const isLoginRateLimited = (req) => {
+  const ip = getClientIp(req);
+  const now = Date.now();
+  const current = loginIpAttempts.get(ip);
+
+  if (!current || now > current.resetAt) {
+    loginIpAttempts.set(ip, { count: 1, resetAt: now + LOGIN_RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+
+  current.count += 1;
+  return current.count > LOGIN_RATE_LIMIT_MAX;
+};
+
+const getAccountAttemptState = (userId) => {
+  const key = userId.toString();
+  const current = loginAccountAttempts.get(key);
+  if (!current || (current.lockUntil && Date.now() > current.lockUntil)) {
+    const fresh = { failedAttempts: 0, lockUntil: null };
+    loginAccountAttempts.set(key, fresh);
+    return fresh;
+  }
+  return current;
+};
+
+const clearAccountAttempts = (userId) => {
+  loginAccountAttempts.delete(userId.toString());
+};
+
+const createPasswordResetToken = async (user) => {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  user.resetPasswordExpire = Date.now() + RESET_TOKEN_EXPIRY_MS;
+  await user.save({ validateBeforeSave: false });
+  return resetToken;
+};
+
+const sendLockNotification = async (user) => {
+  if (!user.email) return;
+
+  try {
+    const resetToken = await createPasswordResetToken(user);
+    await sendAccountLockedEmail(user.email, resetToken);
+  } catch (error) {
+    console.error('[AUTH] Unable to send account lock email:', error.message);
+  }
+};
+
+const recordFailedLogin = async (user) => {
+  if (!user) return 0;
+
+  const state = getAccountAttemptState(user._id);
+  state.failedAttempts += 1;
+
+  if (state.failedAttempts >= 5) {
+    state.lockUntil = Date.now() + ACCOUNT_LOCK_MS;
+    await sendLockNotification(user);
+    return 0;
+  }
+
+  return state.failedAttempts > 1 ? 2 ** (state.failedAttempts - 2) * 1000 : 0;
+};
+
+const isBcryptHash = (value = '') => /^\$2[aby]\$\d{2}\$/.test(value);
+
+const verifyPasswordAndMigrate = async (user, enteredPassword) => {
+  if (!user?.password) return false;
+
+  if (isBcryptHash(user.password)) {
+    return bcrypt.compare(enteredPassword, user.password);
+  }
+
+  const storedPassword = String(user.password);
+  const md5Password = crypto.createHash('md5').update(enteredPassword).digest('hex');
+  const sha1Password = crypto.createHash('sha1').update(enteredPassword).digest('hex');
+  const legacyMatch = storedPassword === enteredPassword
+    || storedPassword.toLowerCase() === md5Password
+    || storedPassword.toLowerCase() === sha1Password;
+
+  if (!legacyMatch) return false;
+
+  user.password = enteredPassword;
+  await user.save();
+  return true;
 };
 
 // @desc    Register a new player user
@@ -171,8 +275,12 @@ const login = async (req, res) => {
     const { loginId, email, phone, ownerId, password } = req.body;
     const identifier = loginId || email || phone || ownerId;
 
+    if (isLoginRateLimited(req)) {
+      return res.status(429).json({ message: 'Too many login attempts. Please try again later.' });
+    }
+
     if (!password || !identifier) {
-      return res.status(400).json({ message: 'Please provide credentials and password' });
+      return res.status(400).json({ message: GENERIC_LOGIN_ERROR });
     }
 
     let query;
@@ -190,8 +298,15 @@ const login = async (req, res) => {
     }
 
     const user = await User.findOne(query).select('+password');
+    if (user) {
+      const state = getAccountAttemptState(user._id);
+      if (state.lockUntil && Date.now() < state.lockUntil) {
+        return res.status(401).json({ message: GENERIC_LOGIN_ERROR });
+      }
+    }
 
-    if (user && (await user.matchPassword(password))) {
+    if (user && (await verifyPasswordAndMigrate(user, password))) {
+      clearAccountAttempts(user._id);
       res.json({
         _id: user._id,
         name: user.name,
@@ -204,7 +319,9 @@ const login = async (req, res) => {
         token: generateToken(user._id),
       });
     } else {
-      res.status(401).json({ message: 'Invalid credentials' });
+      const delayMs = await recordFailedLogin(user);
+      if (delayMs) await sleep(delayMs);
+      res.status(401).json({ message: GENERIC_LOGIN_ERROR });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -450,17 +567,36 @@ location: updatedUser.location,
 // @route   POST /api/auth/forgot-password
 // @access  Public
 const forgotPassword = async (req, res) => {
-  return res.status(501).json({
-    message: 'Password reset is not automated yet. Contact PlayNow support to reset your account.'
-  });
+  try {
+    const email = normalizeEmail(req.body.email);
+
+    if (email && isValidEmail(email)) {
+      const user = await User.findOne({ email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } }).select('+password');
+
+      if (user) {
+        const resetToken = await createPasswordResetToken(user);
+        try {
+          await sendPasswordResetEmail(user.email, resetToken);
+        } catch (error) {
+          console.error('[AUTH] Unable to send password reset email:', error.message);
+        }
+      }
+    }
+
+    res.json({ message: FORGOT_PASSWORD_RESPONSE });
+  } catch (error) {
+    console.error('[AUTH] Forgot password failed:', error.message);
+    res.json({ message: FORGOT_PASSWORD_RESPONSE });
+  }
 };
 
 // @desc    Reset password using token
-// @route   POST /api/auth/reset-password
+// @route   POST /api/auth/reset-password/:token
 // @access  Public
 const resetPassword = async (req, res) => {
   try {
-    const { token, password, confirmPassword } = req.body;
+    const { password, confirmPassword } = req.body;
+    const token = req.params.token || req.body.token;
 
     if (!token || !password) {
       return res.status(400).json({ message: 'Token and new password are required' });
@@ -491,8 +627,9 @@ const resetPassword = async (req, res) => {
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
     await user.save();
+    clearAccountAttempts(user._id);
 
-    // Auto-login: return JWT so user is immediately authenticated
+    // Keep the existing user payload shape for compatibility.
     res.json({
       _id: user._id,
       name: user.name,

@@ -27,13 +27,13 @@ router.route('/my')
   .get(protect, getMyBookings);
 
 router.route('/owner')
-  .get(protect, authorizeRoles('owner', 'manager', 'admin'), getOwnerBookings);
+  .get(protect, authorizeRoles('owner', 'admin'), getOwnerBookings);
 
 router.route('/admin')
   .get(protect, authorizeRoles('admin'), getAdminBookings);
 
 router.route('/:id/collect-balance')
-  .put(protect, authorizeRoles('owner', 'manager', 'admin'), collectBookingBalance);
+  .put(protect, authorizeRoles('owner', 'admin'), collectBookingBalance);
 
 router.route('/:id/cancel')
   .put(protect, cancelBooking);

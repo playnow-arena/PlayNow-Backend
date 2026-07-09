@@ -103,12 +103,6 @@ const resolveVenueOwnerId = async (req, payload = {}, existingVenue = null) => {
     throw error;
   }
 
-  if (ownerUser.role === 'manager') {
-    const error = new Error('Manager accounts cannot be assigned as venue owner');
-    error.statusCode = 400;
-    throw error;
-  }
-
   if (ownerUser.role === 'player') {
     ownerUser.role = 'owner';
     await ownerUser.save();
@@ -285,11 +279,7 @@ const deleteVenue = async (req, res) => {
 // @access  Private/Owner
 const getMyVenues = async (req, res) => {
   try {
-    const query = req.user.role === 'admin'
-      ? {}
-      : req.user.role === 'manager'
-        ? { managerIds: req.user._id }
-        : { ownerId: req.user._id };
+    const query = req.user.role === 'admin' ? {} : { ownerId: req.user._id };
 
     const venues = await Venue.find(query);
     res.json(venues);

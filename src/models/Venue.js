@@ -76,11 +76,6 @@ const venueSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  // Real manager login access. contacts.manager is display/contact info only.
-  managerIds: [{
-    type: mongoose.Schema.ObjectId,
-    ref: 'User'
-  }],
   rating: {
     type: Number,
     min: [1, 'Rating must be at least 1'],
@@ -93,10 +88,6 @@ const venueSchema = new mongoose.Schema({
   },
   contacts: {
     owner: {
-      type: contactSchema,
-      default: {}
-    },
-    manager: {
       type: contactSchema,
       default: {}
     },

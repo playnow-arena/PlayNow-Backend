@@ -115,7 +115,6 @@ const normalizeContacts = (contacts = {}, fallback = {}) => ({
     ...(fallback.phone ? { phone: fallback.phone } : {}),
     ...(fallback.email ? { email: fallback.email } : {})
   },
-  manager: normalizeContact(contacts.manager),
   incharge: normalizeContact(contacts.incharge)
 });
 

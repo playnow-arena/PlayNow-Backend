@@ -79,7 +79,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['player', 'owner', 'manager', 'admin'],
+    enum: ['player', 'owner', 'admin'],
     default: 'player'
   },
     accountStatus: {
@@ -130,7 +130,7 @@ userSchema.pre('save', async function () {
   // Skip if password hasn't changed, or if this is an OTP-only user (no password)
   if (!this.isModified('password') || !this.password) return;
 
-  const salt = await bcrypt.genSalt(10);
+  const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
 });
 
