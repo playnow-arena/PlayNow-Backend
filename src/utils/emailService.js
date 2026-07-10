@@ -65,11 +65,9 @@ const baseEmailShell = ({ eyebrow, title, body, buttonText, buttonUrl, footer })
         <table width="480" cellpadding="0" cellspacing="0" style="background:#151b2b;border-radius:24px;border:1px solid rgba(255,255,255,0.1);overflow:hidden;">
           <tr>
             <td style="padding:40px 40px 20px;text-align:center;">
-              <img
-  src="https://www.playnowarena.in/assets/logo.png"
-  width="150"
-  alt="PlayNow"
-              />
+              <h1 style="margin:0;font-size:28px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">
+  Play<span style="color:#39FF14;">Now</span>
+              </h1>
               <p style="margin:8px 0 0;font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:2px;font-weight:700;">
                 ${eyebrow}
               </p>
