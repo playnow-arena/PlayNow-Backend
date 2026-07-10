@@ -107,7 +107,7 @@ const baseEmailShell = ({ eyebrow, title, body, buttonText, buttonUrl, footer })
 </html>`;
 
 const sendPasswordResetEmail = async (email, resetToken) => {
-  const resetUrl = `${getAppUrl()}/#/reset-password/${resetToken}`;
+  const resetUrl = `${getAppUrl()}/reset-password/${resetToken}`;
   const html = baseEmailShell({
     eyebrow: 'Password Reset',
     title: 'Reset your password',
@@ -129,7 +129,7 @@ const sendPasswordResetEmail = async (email, resetToken) => {
 };
 
 const sendAccountLockedEmail = async (email, resetToken) => {
-  const resetUrl = `${getAppUrl()}/#/reset-password/${resetToken}`;
+  const resetUrl = `${getAppUrl()}/reset-password/${resetToken}`;
   const html = baseEmailShell({
     eyebrow: 'Security Alert',
     title: 'Account temporarily locked',
