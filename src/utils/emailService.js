@@ -66,9 +66,9 @@ const baseEmailShell = ({ eyebrow, title, body, buttonText, buttonUrl, footer })
           <tr>
             <td style="padding:40px 40px 20px;text-align:center;">
               <img
-src="https://www.playnowarena.in/assets/logo.png"
-width="150"
-alt="PlayNow"
+  src="https://www.playnowarena.in/assets/logo.png"
+  width="150"
+  alt="PlayNow"
 />
               <p style="margin:8px 0 0;font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:2px;font-weight:700;">
                 ${eyebrow}
