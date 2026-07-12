@@ -1,8 +1,13 @@
 const Booking = require('../models/Booking');
 const Slot = require('../models/Slot');
 const Venue = require('../models/Venue');
+const User = require('../models/User');
 const { getIO } = require('../socket');
 const n8nService = require('../utils/n8nService');
+const {
+  sendBookingConfirmationEmail,
+  sendOwnerNewBookingEmail
+} = require('../utils/emailService');
 
 const venueAccessQueryForUser = (user) => {
   if (user.role === 'admin') return {};
@@ -13,6 +18,49 @@ const canManageVenue = (venue, user) => (
   user.role === 'admin'
   || venue.ownerId?.toString() === user._id.toString()
 );
+
+const formatTime = (time) => {
+  if (!time) return '';
+  const [hourValue, minute = '00'] = String(time).split(':');
+  const hour = Number(hourValue);
+  if (Number.isNaN(hour)) return time;
+  return `${hour % 12 || 12}:${minute} ${hour >= 12 ? 'PM' : 'AM'}`;
+};
+
+const formatSlotRange = (slot) => (
+  [formatTime(slot?.startTime), formatTime(slot?.endTime)].filter(Boolean).join(' - ')
+);
+
+const formatSlotDate = (slot) => (
+  slot?.date
+    ? new Date(slot.date).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+    : 'Date unavailable'
+);
+
+const buildBookingEventPayload = ({ booking, venue, slots, user }) => ({
+  bookingId: booking._id,
+  bookingCode: booking.bookingCode,
+  venueId: venue._id,
+  venueName: venue.name,
+  court: slots.map(slot => `${slot.courtName || 'Court'}${slot.courtNumber ? ` #${slot.courtNumber}` : ''}`).join(', '),
+  time: slots.map(formatSlotRange).join(', '),
+  date: formatSlotDate(slots[0]),
+  customerName: user.name || user.username || 'Player',
+  customerPhone: user.phone || '',
+  totalAmount: booking.totalAmount,
+  paidAmount: booking.paidAmount,
+  remainingAmount: booking.remainingAmount,
+  slots: slots.map(slot => ({
+    id: slot._id,
+    date: slot.date,
+    startTime: slot.startTime,
+    endTime: slot.endTime,
+    courtCode: slot.courtCode,
+    courtName: slot.courtName,
+    courtNumber: slot.courtNumber,
+    price: slot.price
+  }))
+});
 
 // @desc    Create a booking
 // @route   POST /api/bookings
@@ -94,6 +142,9 @@ const createBooking = async (req, res) => {
       paymentStatus: 'completed' // MVP mock
     });
 
+    const owner = venue.ownerId ? await User.findById(venue.ownerId).select('name email phone') : null;
+    const eventPayload = buildBookingEventPayload({ booking, venue, slots, user: req.user });
+
     // Save persistent notifications
     await createNotification({
       userId: req.user._id,
@@ -101,17 +152,17 @@ const createBooking = async (req, res) => {
       message: `Your booking at ${venue.name} has been successfully confirmed!`,
       type: 'booking',
       link: '/dashboard',
-      metadata: { bookingId: booking._id, venueId },
+      metadata: eventPayload,
       dedupeKey: `booking:${booking._id}:confirmed:player`
     });
 
     await createNotification({
       userId: venue.ownerId,
       title: 'New Booking Received',
-      message: `A new booking has been made for ${venue.name} by ${req.user.name}`,
+      message: `A new booking has been made for ${venue.name} by ${eventPayload.customerName}`,
       type: 'booking',
       link: '/owner',
-      metadata: { bookingId: booking._id, venueId },
+      metadata: eventPayload,
       dedupeKey: `booking:${booking._id}:confirmed:owner`
     });
 
@@ -121,24 +172,38 @@ const createBooking = async (req, res) => {
       message: `Your payment of â‚¹${paidAmount} for ${venue.name} was successful.`,
       type: 'booking',
       link: '/dashboard',
-      metadata: { bookingId: booking._id, venueId, amount: paidAmount },
+      metadata: { bookingId: booking._id, venueId, amount: paidAmount, ...eventPayload },
       dedupeKey: `booking:${booking._id}:payment-success`
     });
 
     // --- REAL-TIME NOTIFICATION ---
     const io = getIO();
+    io.to(`user_${req.user._id}`).emit('booking_confirmed', eventPayload);
     // Notify the owner
-    io.to(`owner_${venue.ownerId}`).emit('newBooking', {
-      bookingId: booking._id,
-      venueName: venue.name,
-      totalAmount: booking.totalAmount,
-      slots: slots.map(s => ({ startTime: s.startTime, endTime: s.endTime }))
-    });
+    io.to(`owner_${venue.ownerId}`).emit('newBooking', eventPayload);
+    io.to(`owner_${venue.ownerId}`).emit('booking_received', eventPayload);
     // Notify everyone on the venue page to update slot statuses
     io.to(`venue_${venueId}`).emit('slotStatusChanged', {
       slotIds,
       status: 'booked'
     });
+
+    await Promise.allSettled([
+      sendBookingConfirmationEmail({
+        to: req.user.email,
+        booking,
+        venue,
+        slots,
+        player: req.user
+      }),
+      sendOwnerNewBookingEmail({
+        to: owner?.email || venue.contacts?.owner?.email,
+        booking,
+        venue,
+        slots,
+        player: req.user
+      })
+    ]);
 
     // --- N8N WEBHOOK INTEGRATION ---
     const bookingData = {

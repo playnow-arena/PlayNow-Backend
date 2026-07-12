@@ -2,9 +2,14 @@ const Booking = require('../models/Booking');
 const PaymentIntent = require('../models/PaymentIntent');
 const Slot = require('../models/Slot');
 const Venue = require('../models/Venue');
+const User = require('../models/User');
 const { getIO } = require('../socket');
 const n8nService = require('../utils/n8nService');
 const razorpayService = require('../utils/razorpayService');
+const {
+  sendBookingConfirmationEmail,
+  sendOwnerNewBookingEmail
+} = require('../utils/emailService');
 
 const CHECKOUT_WINDOW_MS = 15 * 60 * 1000;
 
@@ -28,6 +33,49 @@ const formatOrderResponse = (order) => ({
   currency: order.currency,
   key_id: razorpayService.getPublicKeyId(),
   keyId: razorpayService.getPublicKeyId()
+});
+
+const formatTime = (time) => {
+  if (!time) return '';
+  const [hourValue, minute = '00'] = String(time).split(':');
+  const hour = Number(hourValue);
+  if (Number.isNaN(hour)) return time;
+  return `${hour % 12 || 12}:${minute} ${hour >= 12 ? 'PM' : 'AM'}`;
+};
+
+const formatSlotRange = (slot) => (
+  [formatTime(slot?.startTime), formatTime(slot?.endTime)].filter(Boolean).join(' - ')
+);
+
+const formatSlotDate = (slot) => (
+  slot?.date
+    ? new Date(slot.date).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+    : 'Date unavailable'
+);
+
+const buildBookingEventPayload = ({ booking, venue, slots, user }) => ({
+  bookingId: booking._id,
+  bookingCode: booking.bookingCode,
+  venueId: venue._id,
+  venueName: venue.name,
+  court: slots.map(slot => `${slot.courtName || 'Court'}${slot.courtNumber ? ` #${slot.courtNumber}` : ''}`).join(', '),
+  time: slots.map(formatSlotRange).join(', '),
+  date: formatSlotDate(slots[0]),
+  customerName: user.name || user.username || 'Player',
+  customerPhone: user.phone || '',
+  totalAmount: booking.totalAmount,
+  paidAmount: booking.paidAmount,
+  remainingAmount: booking.remainingAmount,
+  slots: slots.map(slot => ({
+    id: slot._id,
+    date: slot.date,
+    startTime: slot.startTime,
+    endTime: slot.endTime,
+    courtCode: slot.courtCode,
+    courtName: slot.courtName,
+    courtNumber: slot.courtNumber,
+    price: slot.price
+  }))
 });
 
 const createStandardOrder = async (req, res) => {
@@ -116,6 +164,8 @@ const getBookingContext = async ({ userId, venueId, slotIds, paymentType }) => {
 
 const sendBookingSuccessEvents = async ({ booking, venue, slots, user }) => {
   const { createNotification } = require('./notificationController');
+  const owner = venue.ownerId ? await User.findById(venue.ownerId).select('name email phone') : null;
+  const eventPayload = buildBookingEventPayload({ booking, venue, slots, user });
 
   await createNotification({
     userId: user._id,
@@ -123,16 +173,16 @@ const sendBookingSuccessEvents = async ({ booking, venue, slots, user }) => {
     message: `Your booking at ${venue.name} has been successfully confirmed!`,
     type: 'booking',
     link: '/dashboard',
-    metadata: { bookingId: booking._id, venueId: venue._id },
+    metadata: eventPayload,
     dedupeKey: `booking:${booking._id}:confirmed:player`
   });
   await createNotification({
     userId: venue.ownerId,
     title: 'New Booking Received',
-    message: `A new booking has been made for ${venue.name} by ${user.name}`,
+    message: `A new booking has been made for ${venue.name} by ${eventPayload.customerName}`,
     type: 'booking',
     link: '/owner',
-    metadata: { bookingId: booking._id, venueId: venue._id },
+    metadata: eventPayload,
     dedupeKey: `booking:${booking._id}:confirmed:owner`
   });
   await createNotification({
@@ -145,22 +195,39 @@ const sendBookingSuccessEvents = async ({ booking, venue, slots, user }) => {
       bookingId: booking._id,
       venueId: venue._id,
       amount: booking.paidAmount,
-      razorpayPaymentId: booking.razorpayPaymentId
+      razorpayPaymentId: booking.razorpayPaymentId,
+      ...eventPayload
     },
     dedupeKey: `booking:${booking._id}:payment-success`
   });
 
   const io = getIO();
+  io.to(`user_${user._id}`).emit('booking_confirmed', eventPayload);
   io.to(`owner_${venue.ownerId}`).emit('newBooking', {
-    bookingId: booking._id,
-    venueName: venue.name,
-    totalAmount: booking.totalAmount,
-    slots: slots.map(slot => ({ startTime: slot.startTime, endTime: slot.endTime }))
+    ...eventPayload
   });
+  io.to(`owner_${venue.ownerId}`).emit('booking_received', eventPayload);
   io.to(`venue_${venue._id}`).emit('slotStatusChanged', {
     slotIds: booking.slotIds,
     status: 'booked'
   });
+
+  await Promise.allSettled([
+    sendBookingConfirmationEmail({
+      to: user.email,
+      booking,
+      venue,
+      slots,
+      player: user
+    }),
+    sendOwnerNewBookingEmail({
+      to: owner?.email || venue.contacts?.owner?.email,
+      booking,
+      venue,
+      slots,
+      player: user
+    })
+  ]);
 
   n8nService.sendBookingConfirmation({
     bookingId: booking._id.toString(),

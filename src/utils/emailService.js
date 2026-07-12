@@ -153,4 +153,107 @@ const sendAccountLockedEmail = async (email, resetToken) => {
   });
 };
 
-module.exports = { sendPasswordResetEmail, sendAccountLockedEmail };
+const formatCurrency = (amount) => `Rs ${Number(amount || 0).toLocaleString('en-IN')}`;
+
+const formatSlotDate = (slot) => {
+  if (!slot?.date) return 'Date unavailable';
+  return new Date(slot.date).toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+};
+
+const formatTime = (time) => {
+  if (!time) return '';
+  const [hourValue, minute = '00'] = String(time).split(':');
+  const hour = Number(hourValue);
+  if (Number.isNaN(hour)) return time;
+  const period = hour >= 12 ? 'PM' : 'AM';
+  return `${hour % 12 || 12}:${minute} ${period}`;
+};
+
+const formatSlotRange = (slot) => (
+  [formatTime(slot?.startTime), formatTime(slot?.endTime)].filter(Boolean).join(' - ')
+);
+
+const formatSlotsForEmail = (slots = []) => slots.map(slot => `
+  <tr>
+    <td style="padding:8px 0;color:#d1d5db;font-size:14px;">${formatSlotDate(slot)}</td>
+    <td style="padding:8px 0;color:#d1d5db;font-size:14px;">${formatSlotRange(slot)}</td>
+    <td style="padding:8px 0;color:#d1d5db;font-size:14px;">${slot.courtName || 'Court'}${slot.courtNumber ? ` #${slot.courtNumber}` : ''}</td>
+  </tr>
+`).join('');
+
+const bookingDetailsTable = ({ booking, venue, slots, player }) => `
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;background:#0a0f1c;border-radius:16px;padding:16px;border:1px solid rgba(255,255,255,0.08);">
+    <tr><td style="padding:6px 0;color:#9ca3af;font-size:13px;">Booking ID</td><td align="right" style="padding:6px 0;color:#39FF14;font-size:13px;font-weight:800;">${booking.bookingCode || booking._id}</td></tr>
+    <tr><td style="padding:6px 0;color:#9ca3af;font-size:13px;">Venue</td><td align="right" style="padding:6px 0;color:#ffffff;font-size:13px;font-weight:800;">${venue.name}</td></tr>
+    <tr><td style="padding:6px 0;color:#9ca3af;font-size:13px;">Player</td><td align="right" style="padding:6px 0;color:#ffffff;font-size:13px;font-weight:800;">${player?.name || 'Player'}${player?.phone ? ` (${player.phone})` : ''}</td></tr>
+    <tr><td style="padding:6px 0;color:#9ca3af;font-size:13px;">Total</td><td align="right" style="padding:6px 0;color:#ffffff;font-size:13px;font-weight:800;">${formatCurrency(booking.totalAmount)}</td></tr>
+    <tr><td style="padding:6px 0;color:#9ca3af;font-size:13px;">Paid Online</td><td align="right" style="padding:6px 0;color:#39FF14;font-size:13px;font-weight:800;">${formatCurrency(booking.paidAmount)}</td></tr>
+    <tr><td style="padding:6px 0;color:#9ca3af;font-size:13px;">Balance at Venue</td><td align="right" style="padding:6px 0;color:#facc15;font-size:13px;font-weight:800;">${formatCurrency(booking.remainingAmount)}</td></tr>
+  </table>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;">
+    <tr>
+      <th align="left" style="padding-bottom:8px;color:#6b7280;font-size:11px;text-transform:uppercase;">Date</th>
+      <th align="left" style="padding-bottom:8px;color:#6b7280;font-size:11px;text-transform:uppercase;">Time</th>
+      <th align="left" style="padding-bottom:8px;color:#6b7280;font-size:11px;text-transform:uppercase;">Court</th>
+    </tr>
+    ${formatSlotsForEmail(slots)}
+  </table>
+`;
+
+const sendBookingConfirmationEmail = async ({ to, booking, venue, slots, player }) => {
+  if (!to) return { success: false, skipped: true };
+  const html = baseEmailShell({
+    eyebrow: 'Booking Confirmed',
+    title: 'Your PlayNow booking is confirmed',
+    body: `
+      <p style="margin:0 0 16px;font-size:15px;color:#d1d5db;line-height:1.6;">
+        Your slot has been booked successfully. Show this booking at the venue and pay any remaining balance before play.
+      </p>
+      ${bookingDetailsTable({ booking, venue, slots, player })}
+    `,
+    buttonText: 'VIEW MY BOOKINGS',
+    buttonUrl: `${getAppUrl()}/dashboard`,
+    footer: 'Need help? Contact PlayNow support at playnowsupport@gmail.com.',
+  });
+
+  return sendResendEmail({
+    to,
+    subject: `PlayNow booking confirmed - ${venue.name}`,
+    html,
+  });
+};
+
+const sendOwnerNewBookingEmail = async ({ to, booking, venue, slots, player }) => {
+  if (!to) return { success: false, skipped: true };
+  const html = baseEmailShell({
+    eyebrow: 'New Booking',
+    title: 'New booking received',
+    body: `
+      <p style="margin:0 0 16px;font-size:15px;color:#d1d5db;line-height:1.6;">
+        A customer has booked a slot at your venue. Please prepare the court and collect any pending balance at the venue.
+      </p>
+      ${bookingDetailsTable({ booking, venue, slots, player })}
+    `,
+    buttonText: 'OPEN OWNER DASHBOARD',
+    buttonUrl: `${getAppUrl()}/owner`,
+    footer: 'This operational alert was generated automatically by PlayNow.',
+  });
+
+  return sendResendEmail({
+    to,
+    subject: `New booking received - ${venue.name}`,
+    html,
+  });
+};
+
+module.exports = {
+  sendPasswordResetEmail,
+  sendAccountLockedEmail,
+  sendBookingConfirmationEmail,
+  sendOwnerNewBookingEmail
+};
