@@ -147,6 +147,17 @@ const sendLockNotification = async (user) => {
   }
 };
 
+const saveLoginFcmToken = async (userId, token) => {
+  if (!token) return;
+
+  try {
+    const { saveFcmTokenForUser } = require('./notificationController');
+    await saveFcmTokenForUser(userId, token);
+  } catch (error) {
+    console.warn('[AUTH] Unable to save FCM token during login:', error.message);
+  }
+};
+
 const recordFailedLogin = async (user) => {
   if (!user) return 0;
 
@@ -190,7 +201,7 @@ const verifyPasswordAndMigrate = async (user, enteredPassword) => {
 // @access  Public
 const signup = async (req, res) => {
   try {
-    const { name, username, phone, email, password, confirmPassword } = req.body;
+    const { name, username, phone, email, password, confirmPassword, fcmToken } = req.body;
 
     // Input validation
     if (!name || !username || !email || !phone || !password) {
@@ -246,6 +257,7 @@ const signup = async (req, res) => {
     });
 
     if (user) {
+      await saveLoginFcmToken(user._id, fcmToken);
       res.status(201).json({
         _id: user._id,
         name: user.name,
@@ -272,7 +284,7 @@ const signup = async (req, res) => {
 // @access  Public
 const login = async (req, res) => {
   try {
-    const { loginId, email, phone, ownerId, password } = req.body;
+    const { loginId, email, phone, ownerId, password, fcmToken } = req.body;
     const identifier = loginId || email || phone || ownerId;
 
     if (isLoginRateLimited(req)) {
@@ -307,6 +319,7 @@ const login = async (req, res) => {
 
     if (user && (await verifyPasswordAndMigrate(user, password))) {
       clearAccountAttempts(user._id);
+      await saveLoginFcmToken(user._id, fcmToken);
       res.json({
         _id: user._id,
         name: user.name,
@@ -333,7 +346,7 @@ const login = async (req, res) => {
 // @access  Public
 const phoneAuth = async (req, res) => {
   try {
-    const { idToken, name, profilePhoto } = req.body;
+    const { idToken, name, profilePhoto, fcmToken } = req.body;
 
     if (!idToken) {
       return res.status(400).json({ message: 'Firebase ID Token is required' });
@@ -382,6 +395,8 @@ const phoneAuth = async (req, res) => {
       }
     }
 
+    await saveLoginFcmToken(user._id, fcmToken);
+
     res.json({
   _id: user._id,
   name: user.name,
@@ -426,7 +441,7 @@ const sendMockOtp = async (req, res) => {
 // @route   POST /api/auth/verify-otp
 const verifyMockOtp = async (req, res) => {
   try {
-    const { phone, otp, name } = req.body;
+    const { phone, otp, name, fcmToken } = req.body;
     if (!phone || !otp) return res.status(400).json({ message: 'Phone and OTP are required' });
     const formattedPhone = normalizePhone(phone);
     if (!formattedPhone) {
@@ -459,6 +474,7 @@ const verifyMockOtp = async (req, res) => {
       });
     }
     // IMPORTANT: Always return the role from the database — never override it.
+    await saveLoginFcmToken(user._id, fcmToken);
     res.json({ _id: user._id, name: user.name, phone: user.phone, playNowId: user.playNowId, role: user.role, isNewUser, token: generateToken(user._id) });
   } catch (error) {
     res.status(500).json({ message: error.message });

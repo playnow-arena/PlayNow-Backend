@@ -10,6 +10,7 @@ const {
   sendBookingConfirmationEmail,
   sendOwnerNewBookingEmail
 } = require('../utils/emailService');
+const { sendUserPushNotification } = require('../utils/fcmService');
 
 const CHECKOUT_WINDOW_MS = 15 * 60 * 1000;
 
@@ -167,7 +168,7 @@ const sendBookingSuccessEvents = async ({ booking, venue, slots, user }) => {
   const owner = venue.ownerId ? await User.findById(venue.ownerId).select('name email phone') : null;
   const eventPayload = buildBookingEventPayload({ booking, venue, slots, user });
 
-  await createNotification({
+  const playerNotification = await createNotification({
     userId: user._id,
     title: 'Booking Confirmed',
     message: `Your booking at ${venue.name} has been successfully confirmed!`,
@@ -176,7 +177,7 @@ const sendBookingSuccessEvents = async ({ booking, venue, slots, user }) => {
     metadata: eventPayload,
     dedupeKey: `booking:${booking._id}:confirmed:player`
   });
-  await createNotification({
+  const ownerNotification = await createNotification({
     userId: venue.ownerId,
     title: 'New Booking Received',
     message: `A new booking has been made for ${venue.name} by ${eventPayload.customerName}`,
@@ -213,6 +214,30 @@ const sendBookingSuccessEvents = async ({ booking, venue, slots, user }) => {
   });
 
   await Promise.allSettled([
+    playerNotification ? sendUserPushNotification({
+      userId: user._id,
+      title: 'Booking Confirmed',
+      body: `${eventPayload.venueName} • ${eventPayload.court} • ${eventPayload.time} • Rs ${eventPayload.totalAmount}`,
+      url: '/dashboard',
+      dedupeKey: `booking:${booking._id}:push:player`,
+      data: {
+        audience: 'player',
+        notificationId: playerNotification._id,
+        ...eventPayload
+      }
+    }) : Promise.resolve(),
+    ownerNotification ? sendUserPushNotification({
+      userId: venue.ownerId,
+      title: 'New Booking Received',
+      body: `${eventPayload.venueName} • ${eventPayload.court} • ${eventPayload.customerName} • ${eventPayload.time} • Rs ${eventPayload.totalAmount}`,
+      url: '/owner',
+      dedupeKey: `booking:${booking._id}:push:owner`,
+      data: {
+        audience: 'owner',
+        notificationId: ownerNotification._id,
+        ...eventPayload
+      }
+    }) : Promise.resolve(),
     sendBookingConfirmationEmail({
       to: user.email,
       booking,

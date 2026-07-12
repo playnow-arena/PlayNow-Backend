@@ -3,6 +3,31 @@ const jwt = require('jsonwebtoken');
 const User = require('./models/User');
 
 let io;
+const visibleUserSockets = new Map();
+
+const setUserSocketVisibility = (userId, socketId, isVisible) => {
+  if (!userId) return;
+  const key = userId.toString();
+  const sockets = visibleUserSockets.get(key) || new Set();
+
+  if (isVisible) {
+    sockets.add(socketId);
+    visibleUserSockets.set(key, sockets);
+    return;
+  }
+
+  sockets.delete(socketId);
+  if (sockets.size === 0) {
+    visibleUserSockets.delete(key);
+  } else {
+    visibleUserSockets.set(key, sockets);
+  }
+};
+
+const isUserVisible = (userId) => {
+  if (!userId) return false;
+  return (visibleUserSockets.get(userId.toString())?.size || 0) > 0;
+};
 
 const initSocket = (server) => {
   const configuredOrigins = (process.env.FRONTEND_URL || '')
@@ -68,11 +93,19 @@ const initSocket = (server) => {
       console.log(`🏟️ [ROOM] User joined venue room: venue_${venueId}`);
     });
 
+    socket.on('app_visibility', (payload = {}) => {
+      if (!socket.user?._id) return;
+      setUserSocketVisibility(socket.user._id, socket.id, payload.visible === true);
+    });
+
     socket.on('error', (err) => {
       console.error(`❌ [SOCKET] Error for ${socket.id}:`, err.message);
     });
 
     socket.on('disconnect', (reason) => {
+      if (socket.user?._id) {
+        setUserSocketVisibility(socket.user._id, socket.id, false);
+      }
       console.log(`🔌 [SOCKET] Client disconnected: ${socket.id} (${reason})`);
     });
   });
@@ -87,4 +120,4 @@ const getIO = () => {
   return io;
 };
 
-module.exports = { initSocket, getIO };
+module.exports = { initSocket, getIO, isUserVisible };

@@ -8,6 +8,7 @@ const {
   sendBookingConfirmationEmail,
   sendOwnerNewBookingEmail
 } = require('../utils/emailService');
+const { sendUserPushNotification } = require('../utils/fcmService');
 
 const venueAccessQueryForUser = (user) => {
   if (user.role === 'admin') return {};
@@ -146,7 +147,7 @@ const createBooking = async (req, res) => {
     const eventPayload = buildBookingEventPayload({ booking, venue, slots, user: req.user });
 
     // Save persistent notifications
-    await createNotification({
+    const playerNotification = await createNotification({
       userId: req.user._id,
       title: 'Booking Confirmed',
       message: `Your booking at ${venue.name} has been successfully confirmed!`,
@@ -156,7 +157,7 @@ const createBooking = async (req, res) => {
       dedupeKey: `booking:${booking._id}:confirmed:player`
     });
 
-    await createNotification({
+    const ownerNotification = await createNotification({
       userId: venue.ownerId,
       title: 'New Booking Received',
       message: `A new booking has been made for ${venue.name} by ${eventPayload.customerName}`,
@@ -189,6 +190,30 @@ const createBooking = async (req, res) => {
     });
 
     await Promise.allSettled([
+      playerNotification ? sendUserPushNotification({
+        userId: req.user._id,
+        title: 'Booking Confirmed',
+        body: `${eventPayload.venueName} • ${eventPayload.court} • ${eventPayload.time} • Rs ${eventPayload.totalAmount}`,
+        url: '/dashboard',
+        dedupeKey: `booking:${booking._id}:push:player`,
+        data: {
+          audience: 'player',
+          notificationId: playerNotification._id,
+          ...eventPayload
+        }
+      }) : Promise.resolve(),
+      ownerNotification ? sendUserPushNotification({
+        userId: venue.ownerId,
+        title: 'New Booking Received',
+        body: `${eventPayload.venueName} • ${eventPayload.court} • ${eventPayload.customerName} • ${eventPayload.time} • Rs ${eventPayload.totalAmount}`,
+        url: '/owner',
+        dedupeKey: `booking:${booking._id}:push:owner`,
+        data: {
+          audience: 'owner',
+          notificationId: ownerNotification._id,
+          ...eventPayload
+        }
+      }) : Promise.resolve(),
       sendBookingConfirmationEmail({
         to: req.user.email,
         booking,

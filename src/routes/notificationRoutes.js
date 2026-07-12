@@ -8,7 +8,8 @@ const {
   deleteNotification,
   markSelectedRead,
   deleteSelected,
-  getAdminMetrics
+  getAdminMetrics,
+  upsertFcmToken
 } = require('../controllers/notificationController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -31,6 +32,9 @@ router.route('/read-selected')
 
 router.route('/delete-selected')
   .post(deleteSelected);
+
+router.route('/fcm-token')
+  .post(upsertFcmToken);
 
 router.route('/:id/read')
   .patch(markRead);

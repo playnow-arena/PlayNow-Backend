@@ -93,6 +93,11 @@ const userSchema = new mongoose.Schema({
       review: { type: Boolean, default: true },
       system: { type: Boolean, default: true }
     },
+    fcmTokens: {
+      type: [String],
+      default: [],
+      select: false
+    },
     bio: {
       type: String,
       maxlength: [300, 'Bio cannot be more than 300 characters'],
@@ -122,6 +127,8 @@ const userSchema = new mongoose.Schema({
   }, {
     timestamps: true
   });
+
+userSchema.index({ fcmTokens: 1 });
 
 // Encrypt password using bcrypt before saving
 // NOTE: async pre-save hooks in Mongoose 7+ do NOT receive `next` as a callback.

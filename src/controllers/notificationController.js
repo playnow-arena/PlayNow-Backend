@@ -1,5 +1,57 @@
 const Notification = require('../models/Notification');
+const User = require('../models/User');
 const { getIO } = require('../socket');
+
+const normalizeFcmToken = (token) => String(token || '').trim();
+
+const isValidFcmToken = (token) => {
+  const normalized = normalizeFcmToken(token);
+  return normalized.length >= 20 && normalized.length <= 4096;
+};
+
+const saveFcmTokenForUser = async (userId, token) => {
+  const normalizedToken = normalizeFcmToken(token);
+  if (!isValidFcmToken(normalizedToken)) {
+    const error = new Error('Valid FCM token is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // A browser token belongs to one logged-in user at a time. Remove it globally
+  // first, then add it to the current user without duplicating existing tokens.
+  await User.updateMany(
+    { fcmTokens: normalizedToken },
+    { $pull: { fcmTokens: normalizedToken } }
+  );
+
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    { $addToSet: { fcmTokens: normalizedToken } },
+    { new: true, select: '+fcmTokens' }
+  );
+
+  return updatedUser?.fcmTokens || [];
+};
+
+const removeFcmTokensForUser = async (userId, tokens = []) => {
+  const normalizedTokens = (Array.isArray(tokens) ? tokens : [tokens])
+    .map(normalizeFcmToken)
+    .filter(Boolean);
+
+  if (normalizedTokens.length === 0) {
+    const error = new Error('At least one FCM token is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    { $pull: { fcmTokens: { $in: normalizedTokens } } },
+    { new: true, select: '+fcmTokens' }
+  );
+
+  return updatedUser?.fcmTokens || [];
+};
 
 const createNotification = async ({
   userId,
@@ -58,6 +110,31 @@ const createNotification = async ({
       return Notification.findOne({ userId, dedupeKey });
     }
     console.error('❌ [NOTIFICATION] Error creating notification:', error.message);
+  }
+};
+
+// @desc    Save or remove FCM token for current user/device
+// @route   POST /api/notifications/fcm-token
+// @access  Private
+const upsertFcmToken = async (req, res) => {
+  try {
+    const { token, tokens, action = 'save' } = req.body;
+
+    if (action === 'remove') {
+      const remainingTokens = await removeFcmTokensForUser(req.user._id, tokens || token);
+      return res.json({
+        message: 'FCM token removed',
+        tokenCount: remainingTokens.length
+      });
+    }
+
+    const userTokens = await saveFcmTokenForUser(req.user._id, token);
+    return res.json({
+      message: 'FCM token saved',
+      tokenCount: userTokens.length
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
 
@@ -245,6 +322,9 @@ const getAdminMetrics = async (req, res) => {
 
 module.exports = {
   createNotification,
+  saveFcmTokenForUser,
+  removeFcmTokensForUser,
+  upsertFcmToken,
   getNotifications,
   getUnreadCount,
   markRead,
