@@ -38,6 +38,10 @@ const bookingSchema = new mongoose.Schema({
     enum: ['confirmed', 'cancelled', 'completed'],
     default: 'confirmed'
   },
+  bookingCode: {
+    type: String,
+    unique: true
+  },
   paymentStatus: {
     type: String,
     enum: ['pending', 'advance_paid', 'completed', 'refunded'],

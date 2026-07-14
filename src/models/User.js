@@ -61,6 +61,11 @@ const userSchema = new mongoose.Schema({
     unique: true,
     required: true
   },
+  ownerCode: {
+    type: String,
+    unique: true,
+    sparse: true // Only owners have this
+  },
   ownerId: {
     type: String,
     unique: true,

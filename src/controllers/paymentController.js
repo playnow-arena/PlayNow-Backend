@@ -4,6 +4,7 @@ const Slot = require('../models/Slot');
 const Venue = require('../models/Venue');
 const User = require('../models/User');
 const { getIO } = require('../socket');
+const generatePlayNowId = require('../utils/generatePlayNowId');
 const n8nService = require('../utils/n8nService');
 const razorpayService = require('../utils/razorpayService');
 const {
@@ -326,7 +327,8 @@ const createRazorpayOrder = async (req, res) => {
       paidAmount: context.paidAmount,
       remainingAmount: context.remainingAmount,
       razorpayOrderId: order.id,
-      expiresAt: context.lockExpiresAt
+      expiresAt: context.lockExpiresAt,
+      paymentCode: await generatePlayNowId('payment')
     });
 
     res.status(201).json(formatOrderResponse(order));
@@ -477,7 +479,8 @@ const verifyRazorpayPayment = async (req, res) => {
         bookingStatus: 'confirmed',
         paymentStatus: intent.remainingAmount > 0 ? 'advance_paid' : 'completed',
         razorpayOrderId,
-        razorpayPaymentId
+        razorpayPaymentId,
+        bookingCode: await generatePlayNowId('booking')
       });
     } catch (error) {
       await Slot.updateMany(

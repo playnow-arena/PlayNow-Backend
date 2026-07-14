@@ -21,6 +21,10 @@ const matchSchema = new mongoose.Schema({
     enum: ['open', 'full', 'cancelled'],
     default: 'open',
   },
+  matchCode: {
+    type: String,
+    unique: true
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Match', matchSchema);

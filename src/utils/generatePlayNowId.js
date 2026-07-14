@@ -1,40 +1,32 @@
 const Counter = require('../models/Counter');
-const User = require('../models/User');
 
-const USER_COUNTER_KEY = 'playnow_user_id';
-const USER_ID_PREFIX = 'PNUSR';
-
-const getCurrentMaxUserSequence = async () => {
-  const latestUser = await User.findOne({
-    playNowId: new RegExp(`^${USER_ID_PREFIX}\\d+$`)
-  })
-    .sort({ playNowId: -1 })
-    .select('playNowId')
-    .lean();
-
-  if (!latestUser?.playNowId) return 0;
-  return Number(latestUser.playNowId.replace(USER_ID_PREFIX, '')) || 0;
+// Entity Configuration
+const ENTITY_CONFIG = {
+  booking: { key: 'playnow_booking_id', prefix: 'PNBN' },
+  owner: { key: 'playnow_owner_id', prefix: 'PNOWN' },
+  venue: { key: 'playnow_venue_id', prefix: 'PNVEN' },
+  payment: { key: 'playnow_payment_id', prefix: 'PNPAY' },
+  match: { key: 'playnow_match_id', prefix: 'PNMAT' }
 };
 
-const formatUserId = (sequence) => `${USER_ID_PREFIX}${String(sequence).padStart(3, '0')}`;
+const formatId = (prefix, sequence) => `${prefix}${String(sequence).padStart(6, '0')}`;
 
-const generatePlayNowId = async () => {
-  const currentMax = await getCurrentMaxUserSequence();
-  await Counter.updateOne(
-    { _id: USER_COUNTER_KEY },
-    { $max: { seq: currentMax } },
-    { upsert: true }
-  );
+const generatePlayNowId = async (entityType) => {
+  const config = ENTITY_CONFIG[entityType];
+  if (!config) {
+    throw new Error(`Invalid entity type for ID generation: ${entityType}`);
+  }
 
   const counter = await Counter.findOneAndUpdate(
-    { _id: USER_COUNTER_KEY },
+    { _id: config.key },
     { $inc: { seq: 1 } },
     {
-      returnDocument: 'after'
+      new: true,
+      upsert: true
     }
   );
 
-  return formatUserId(counter.seq);
+  return formatId(config.prefix, counter.seq);
 };
 
 module.exports = generatePlayNowId;

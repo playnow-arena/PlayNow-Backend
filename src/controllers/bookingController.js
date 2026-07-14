@@ -3,6 +3,7 @@ const Slot = require('../models/Slot');
 const Venue = require('../models/Venue');
 const User = require('../models/User');
 const { getIO } = require('../socket');
+const generatePlayNowId = require('../utils/generatePlayNowId');
 const n8nService = require('../utils/n8nService');
 const {
   sendBookingConfirmationEmail,
@@ -140,7 +141,8 @@ const createBooking = async (req, res) => {
       paidAmount,
       remainingAmount,
       bookingStatus: 'confirmed',
-      paymentStatus: 'completed' // MVP mock
+      paymentStatus: 'completed', // MVP mock
+      bookingCode: await generatePlayNowId('booking')
     });
 
     const owner = venue.ownerId ? await User.findById(venue.ownerId).select('name email phone') : null;

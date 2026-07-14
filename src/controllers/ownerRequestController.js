@@ -1,6 +1,7 @@
 const OwnerRequest = require('../models/OwnerRequest');
 const User = require('../models/User');
 const Venue = require('../models/Venue');
+const generatePlayNowId = require('../utils/generatePlayNowId');
 
 const normalizePhone = (phone) => {
   const digits = String(phone || '').replace(/\D/g, '');
@@ -261,6 +262,10 @@ const approveOwnerRequest = async (req, res) => {
 
     if (owner) {
       owner = await promoteUserToOwner(owner, ownerRequest);
+      if (owner.role === 'owner' && !owner.ownerCode) {
+        owner.ownerCode = await generatePlayNowId('owner');
+        await owner.save();
+      }
     } else {
       return res.status(404).json({ message: 'User not found for this owner request' });
     }

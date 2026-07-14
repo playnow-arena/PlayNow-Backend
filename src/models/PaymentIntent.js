@@ -54,6 +54,10 @@ const paymentIntentSchema = new mongoose.Schema({
     default: 'created',
     index: true
   },
+  paymentCode: {
+    type: String,
+    unique: true
+  },
   expiresAt: {
     type: Date,
     required: true,

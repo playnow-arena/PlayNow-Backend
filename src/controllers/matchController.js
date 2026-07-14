@@ -1,4 +1,5 @@
 const Match = require('../models/Match');
+const generatePlayNowId = require('../utils/generatePlayNowId');
 
 const createMatch = async (req, res) => {
   try {
@@ -17,6 +18,7 @@ const createMatch = async (req, res) => {
       totalPlayers,
       totalAmount,
       joinedPlayers: [req.user._id],
+      matchCode: await generatePlayNowId('match')
     });
 
     res.status(201).json(match);

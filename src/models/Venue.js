@@ -30,6 +30,10 @@ const venueSchema = new mongoose.Schema({
     trim: true,
     maxlength: [50, 'Name cannot be more than 50 characters']
   },
+  venueCode: {
+    type: String,
+    unique: true
+  },
   sportTypes: {
     type: [String],
     required: true,

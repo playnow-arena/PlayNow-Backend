@@ -1,5 +1,6 @@
 const Venue = require('../models/Venue');
 const User = require('../models/User');
+const generatePlayNowId = require('../utils/generatePlayNowId');
 
 const toList = (value) => (Array.isArray(value) ? value : String(value || '').split(','))
   .map((item) => item.trim())
@@ -207,6 +208,7 @@ const createVenue = async (req, res) => {
 
     payload.ownerId = await resolveVenueOwnerId(req, payload);
     stripOwnerSelectionFields(payload);
+    payload.venueCode = await generatePlayNowId('venue');
 
     const venue = await Venue.create(payload);
     res.status(201).json(venue);
