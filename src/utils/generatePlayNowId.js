@@ -6,12 +6,13 @@ const ENTITY_CONFIG = {
   owner: { key: 'playnow_owner_id', prefix: 'PNOWN' },
   venue: { key: 'playnow_venue_id', prefix: 'PNVEN' },
   payment: { key: 'playnow_payment_id', prefix: 'PNPAY' },
-  match: { key: 'playnow_match_id', prefix: 'PNMAT' }
+  match: { key: 'playnow_match_id', prefix: 'PNMAT' },
+  user: { key: 'playnow_user_id', prefix: 'PNUSR' }
 };
 
 const formatId = (prefix, sequence) => `${prefix}${String(sequence).padStart(6, '0')}`;
 
-const generatePlayNowId = async (entityType) => {
+const generatePlayNowId = async (entityType = 'user') => {
   const config = ENTITY_CONFIG[entityType];
   if (!config) {
     throw new Error(`Invalid entity type for ID generation: ${entityType}`);

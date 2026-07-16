@@ -112,6 +112,39 @@ const resolveVenueOwnerId = async (req, payload = {}, existingVenue = null) => {
   return ownerUser._id;
 };
 
+// @desc    Get venues near a location
+// @route   GET /api/venues/nearby
+// @access  Public
+const getNearbyVenues = async (req, res) => {
+  try {
+    const { lat, lng, maxDistanceKm } = req.query;
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
+    const maxDistance = parseFloat(maxDistanceKm) || 20; // Default 20km
+
+    if (isNaN(latitude) || isNaN(longitude)) {
+      return res.status(400).json({ message: 'Valid latitude and longitude are required' });
+    }
+
+    const venues = await Venue.find({
+      geo: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [longitude, latitude]
+          },
+          $maxDistance: maxDistance * 1000 // Convert km to meters
+        }
+      },
+      isActive: true
+    }).populate('ownerId', 'name playNowId');
+
+    res.json(venues);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Get all venues (with filters)
 // @route   GET /api/venues
 // @access  Public
@@ -292,6 +325,7 @@ const getMyVenues = async (req, res) => {
 
 module.exports = {
   getVenues,
+  getNearbyVenues,
   getVenueById,
   getMyVenues,
   createVenue,

@@ -59,9 +59,18 @@ const venueSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please add a full address']
   },
-  coordinates: {
-    lat: Number,
-    lng: Number
+  geo: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      required: true,
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number],
+      required: true,
+      index: '2dsphere'
+    }
   },
   images: {
     type: [String],

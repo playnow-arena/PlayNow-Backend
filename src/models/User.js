@@ -127,6 +127,20 @@ const userSchema = new mongoose.Schema({
       trim: true,
       default: ''
     },
+    achievements: {
+      type: [String],
+      default: []
+    },
+    favouriteVenues: [{
+      type: mongoose.Schema.ObjectId,
+      ref: 'Venue'
+    }],
+    statistics: {
+      matchesPlayed: { type: Number, default: 0 },
+      matchesHosted: { type: Number, default: 0 },
+      wins: { type: Number, default: 0 },
+      rating: { type: Number, default: 0 }
+    },
     resetPasswordToken: String,
     resetPasswordExpire: Date
   }, {

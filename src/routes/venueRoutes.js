@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { 
-  getVenues, 
+  getVenues,
+  getNearbyVenues,
   getVenueById, 
   getMyVenues,
   createVenue, 
@@ -14,6 +15,8 @@ const { authorizeRoles } = require('../middleware/roleMiddleware');
 router.route('/')
   .get(getVenues)
   .post(protect, authorizeRoles('owner', 'admin'), createVenue);
+
+router.get('/nearby', getNearbyVenues);
 
 router.route('/my')
   .get(protect, authorizeRoles('owner', 'admin'), getMyVenues);

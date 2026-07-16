@@ -3,11 +3,11 @@ const User = require('../models/User');
 const normalizeUsername = (username) => String(username || '').trim().toLowerCase();
 const isValidUsername = (username) => /^[a-z0-9_.]{3,20}$/.test(username);
 
-const userProfileFields = 'name username email phone playNowId role accountStatus bio preferredSports city area location ownerId notificationPreferences';
+const userProfileFields = 'name username email phone playNowId role accountStatus bio preferredSports city area location ownerId notificationPreferences profilePhoto achievements statistics favouriteVenues';
 
 const getMyProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select(userProfileFields);
+    const user = await User.findById(req.user._id).select(userProfileFields).populate('favouriteVenues', 'name address');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -40,6 +40,7 @@ const updateMyProfile = async (req, res) => {
     }
 
     if (req.body.name !== undefined) user.name = String(req.body.name).trim();
+    if (req.body.profilePhoto !== undefined) user.profilePhoto = String(req.body.profilePhoto).trim();
     if (req.body.bio !== undefined) user.bio = String(req.body.bio).trim();
     if (req.body.city !== undefined) user.city = String(req.body.city).trim();
     if (req.body.area !== undefined) user.area = String(req.body.area).trim();
@@ -49,10 +50,22 @@ const updateMyProfile = async (req, res) => {
         ? req.body.preferredSports.map((sport) => String(sport).trim()).filter(Boolean)
         : String(req.body.preferredSports).split(',').map((sport) => sport.trim()).filter(Boolean);
     }
+    
+    if (req.body.favouriteVenues !== undefined) {
+      user.favouriteVenues = Array.isArray(req.body.favouriteVenues)
+        ? req.body.favouriteVenues
+        : [];
+    }
+    
+    // Allow updating achievements and stats if admin or relevant logic allows
+    if (req.user.role === 'admin') {
+      if (req.body.achievements !== undefined) user.achievements = req.body.achievements;
+      if (req.body.statistics !== undefined) user.statistics = req.body.statistics;
+    }
 
     await user.save();
 
-    const updatedUser = await User.findById(user._id).select(userProfileFields);
+    const updatedUser = await User.findById(user._id).select(userProfileFields).populate('favouriteVenues', 'name address');
     res.json(updatedUser);
   } catch (error) {
     if (error?.code === 11000 && error?.keyPattern?.username) {

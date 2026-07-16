@@ -6,7 +6,7 @@ const Venue  = require('../models/Venue');
 // Called after any create / update / delete operation.
 // ─────────────────────────────────────────────────────────
 const recalcVenueRating = async (venueId) => {
-  const allReviews = await Review.find({ venueId });
+  const allReviews = await Review.find({ venue: venueId });
 
   if (allReviews.length === 0) {
     // Safe guard: no reviews → reset to defaults
@@ -43,8 +43,8 @@ const buildRatingDistribution = (reviews) => {
 // ─────────────────────────────────────────────────────────
 const getReviewsByVenue = async (req, res) => {
   try {
-    const reviews = await Review.find({ venueId: req.params.venueId })
-      .populate('userId', 'name playNowId profilePhoto')
+    const reviews = await Review.find({ venue: req.params.venueId })
+      .populate('user', 'name playNowId profilePhoto')
       .sort({ createdAt: -1 });
 
     const ratingDistribution = buildRatingDistribution(reviews);
@@ -76,7 +76,7 @@ const createReview = async (req, res) => {
     }
 
     // Controller-level duplicate guard (DB index is the final safety net)
-    const existing = await Review.findOne({ venueId, userId: req.user._id });
+    const existing = await Review.findOne({ venue: venueId, user: req.user._id });
     if (existing) {
       return res.status(400).json({
         message: 'You have already reviewed this venue. Edit your existing review instead.'
@@ -84,8 +84,8 @@ const createReview = async (req, res) => {
     }
 
     const review = await Review.create({
-      venueId,
-      userId:  req.user._id,
+      venue: venueId,
+      user:  req.user._id,
       rating,
       comment: comment || ''
     });
@@ -107,7 +107,7 @@ const createReview = async (req, res) => {
     }
 
     // Populate user info before returning
-    const populated = await review.populate('userId', 'name playNowId profilePhoto');
+    const populated = await review.populate('user', 'name playNowId profilePhoto');
 
     res.status(201).json(populated);
   } catch (error) {
@@ -134,7 +134,7 @@ const updateReview = async (req, res) => {
     }
 
     // Only the author may edit their review
-    if (review.userId.toString() !== req.user._id.toString()) {
+    if (review.user.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to edit this review' });
     }
 
@@ -143,9 +143,9 @@ const updateReview = async (req, res) => {
     if (comment !== undefined) review.comment = comment;
 
     await review.save();
-    await recalcVenueRating(review.venueId);
+    await recalcVenueRating(review.venue);
 
-    const populated = await review.populate('userId', 'name playNowId profilePhoto');
+    const populated = await review.populate('user', 'name playNowId profilePhoto');
     res.json(populated);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -164,16 +164,16 @@ const deleteReview = async (req, res) => {
       return res.status(404).json({ message: 'Review not found' });
     }
 
-    const isOwner = review.userId.toString() === req.user._id.toString();
+    const isOwner = review.user.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
 
     if (!isOwner && !isAdmin) {
       return res.status(403).json({ message: 'Not authorized to delete this review' });
     }
 
-    const { venueId } = review;
+    const { venue } = review;
     await review.deleteOne();
-    await recalcVenueRating(venueId);
+    await recalcVenueRating(venue);
 
     res.json({ message: 'Review deleted successfully' });
   } catch (error) {
