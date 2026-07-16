@@ -3,6 +3,7 @@ const router = express.Router();
 const { 
   getVenues,
   getNearbyVenues,
+  getFeaturedVenues,
   getVenueById, 
   getMyVenues,
   createVenue, 
@@ -17,6 +18,7 @@ router.route('/')
   .post(protect, authorizeRoles('owner', 'admin'), createVenue);
 
 router.get('/nearby', getNearbyVenues);
+router.get('/featured', getFeaturedVenues);
 
 router.route('/my')
   .get(protect, authorizeRoles('owner', 'admin'), getMyVenues);
