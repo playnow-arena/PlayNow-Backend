@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const connectDB = require('./src/config/db');
+const { connectDB } = require('./src/config/db');
 
 const http = require('http');
 const { initSocket } = require('./src/socket');

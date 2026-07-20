@@ -6,6 +6,11 @@ const generatePlayNowId = require('../utils/generatePlayNowId'); // Import ID ge
 // Force Google DNS to resolve MongoDB SRV records (fixes ECONNREFUSED issues)
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 
+let resolveDbReady;
+const dbReadyPromise = new Promise((resolve) => {
+  resolveDbReady = resolve;
+});
+
 const connectDB = async () => {
   try {
     let uri = process.env.MONGO_URI;
@@ -49,7 +54,13 @@ const connectDB = async () => {
         console.log(`Cleaned up ${deleteResult.deletedCount} invalid/obsolete counter documents.`);
       }
     } catch (migError) {
-      console.error('Migration failed during database connection setup:', migError);
+      if (migError.code === 26 || migError.codeName === 'NamespaceNotFound') {
+        console.log('Counters collection does not exist yet. Skipping index dropping/cleanup migration.');
+      } else {
+        console.error('Migration failed during database connection setup:', migError);
+      }
+    } finally {
+      resolveDbReady();
     }
 
     // Seed admin and owner if using memory server
@@ -81,8 +92,8 @@ const connectDB = async () => {
   } catch (error) {
     console.error(`Error: ${error.message}`);
     console.warn('⚠️ Server will continue running without database connection.');
-    // process.exit(1);
+    resolveDbReady(); // Resolve to avoid hanging callers if connection fails
   }
 };
 
-module.exports = connectDB;
+module.exports = { connectDB, dbReadyPromise };

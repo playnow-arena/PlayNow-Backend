@@ -13,6 +13,11 @@ const ENTITY_CONFIG = {
 const formatId = (prefix, sequence) => `${prefix}${String(sequence).padStart(6, '0')}`;
 
 const generatePlayNowId = async (entityType) => {
+  const { dbReadyPromise } = require('../config/db');
+  if (dbReadyPromise) {
+    await dbReadyPromise;
+  }
+
   if (!entityType) {
     throw new Error('entityType parameter is required for generatePlayNowId');
   }
@@ -20,6 +25,16 @@ const generatePlayNowId = async (entityType) => {
   const config = ENTITY_CONFIG[entityType];
   if (!config) {
     throw new Error(`Invalid entity type for ID generation: ${entityType}`);
+  }
+
+  // Temporary Debug Logging
+  console.log("Entity:", entityType);
+  console.log("Counter Key:", config.key);
+  try {
+    const indexes = await Counter.collection.indexes();
+    console.log("Current Indexes:", indexes.map(idx => idx.name));
+  } catch (err) {
+    console.log("Current Indexes: Could not fetch indexes:", err.message);
   }
 
   const counter = await Counter.findOneAndUpdate(
