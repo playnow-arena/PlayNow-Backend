@@ -2,6 +2,7 @@ const OwnerRequest = require('../models/OwnerRequest');
 const User = require('../models/User');
 const Venue = require('../models/Venue');
 const generatePlayNowId = require('../utils/generatePlayNowId');
+const syncOwnerRole = require('../utils/syncOwnerRole');
 
 const normalizePhone = (phone) => {
   const digits = String(phone || '').replace(/\D/g, '');
@@ -75,14 +76,13 @@ const findExistingOwnerApplicant = async (ownerRequest) => {
   return User.findOne({ phone: { $in: phoneValues } });
 };
 
-const promoteUserToOwner = async (user, ownerRequest) => {
+// Updates the user's contact info from the request form.
+// DOES NOT change the user's role — role is managed exclusively by syncOwnerRole.
+const updateUserProfileFromRequest = async (user, ownerRequest) => {
   user.name = user.name || ownerRequest.ownerName;
   user.phone = user.phone || ownerRequest.phone;
   if (!user.email && ownerRequest.email) {
     user.email = ownerRequest.email;
-  }
-  if (user.role !== 'admin') {
-    user.role = 'owner';
   }
   await user.save();
   return user;
@@ -260,17 +260,25 @@ const approveOwnerRequest = async (req, res) => {
 
     let owner = await findExistingOwnerApplicant(ownerRequest);
 
-    if (owner) {
-      owner = await promoteUserToOwner(owner, ownerRequest);
-      if (owner.role === 'owner' && !owner.ownerCode) {
-        owner.ownerCode = await generatePlayNowId('owner');
-        await owner.save();
-      }
-    } else {
+    if (!owner) {
       return res.status(404).json({ message: 'User not found for this owner request' });
     }
 
+    // Sync contact info only — role is NOT changed here
+    owner = await updateUserProfileFromRequest(owner, ownerRequest);
+
+    // Create the venue first — role is determined by actual venue ownership
     const venue = await Venue.create(buildVenuePayload(ownerRequest, owner._id));
+
+    // NOW sync the role: venue exists, so syncOwnerRole will promote to 'owner'
+    await syncOwnerRole(owner._id);
+
+    // Assign ownerCode only after confirmed as owner
+    const confirmedOwner = await User.findById(owner._id);
+    if (confirmedOwner.role === 'owner' && !confirmedOwner.ownerCode) {
+      confirmedOwner.ownerCode = await generatePlayNowId('owner');
+      await confirmedOwner.save();
+    }
 
     ownerRequest.status = 'approved';
     ownerRequest.reviewedBy = req.user._id;

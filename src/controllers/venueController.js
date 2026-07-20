@@ -1,6 +1,7 @@
 const Venue = require('../models/Venue');
 const User = require('../models/User');
 const generatePlayNowId = require('../utils/generatePlayNowId');
+const syncOwnerRole = require('../utils/syncOwnerRole');
 
 const toList = (value) => (Array.isArray(value) ? value : String(value || '').split(','))
   .map((item) => item.trim())
@@ -104,11 +105,7 @@ const resolveVenueOwnerId = async (req, payload = {}, existingVenue = null) => {
     throw error;
   }
 
-  if (ownerUser.role === 'player') {
-    ownerUser.role = 'owner';
-    await ownerUser.save();
-  }
-
+  // DO NOT promote here — role is synced AFTER the venue is persisted
   return ownerUser._id;
 };
 
@@ -244,6 +241,10 @@ const createVenue = async (req, res) => {
     payload.venueCode = await generatePlayNowId('venue');
 
     const venue = await Venue.create(payload);
+
+    // Venue exists — now safe to sync the owner's role
+    await syncOwnerRole(venue.ownerId);
+
     res.status(201).json(venue);
   } catch (error) {
     res.status(error.statusCode || 400).json({ message: error.message });
@@ -268,6 +269,9 @@ const updateVenue = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to update this venue' });
     }
 
+    // Capture old owner BEFORE the update for potential demotion
+    const oldOwnerId = venue.ownerId;
+
     if (req.user.role === 'admin') {
       payload.ownerId = await resolveVenueOwnerId(req, payload, venue);
     } else {
@@ -279,6 +283,13 @@ const updateVenue = async (req, res) => {
       new: true,
       runValidators: true
     });
+
+    // If ownership was transferred, sync both the old and new owner's roles
+    const newOwnerId = venue.ownerId;
+    if (oldOwnerId.toString() !== newOwnerId.toString()) {
+      await syncOwnerRole(oldOwnerId); // may demote old owner if no remaining venues
+      await syncOwnerRole(newOwnerId); // may promote new owner if this is their first venue
+    }
 
     res.json(venue);
   } catch (error) {
@@ -302,7 +313,14 @@ const deleteVenue = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to delete this venue' });
     }
 
+    // Capture old owner BEFORE deletion for potential demotion
+    const oldOwnerId = venue.ownerId;
+
     await venue.deleteOne();
+
+    // Sync role — demotes to player if this was the owner's last venue
+    await syncOwnerRole(oldOwnerId);
+
     res.json({ message: 'Venue removed' });
   } catch (error) {
     res.status(500).json({ message: error.message });
