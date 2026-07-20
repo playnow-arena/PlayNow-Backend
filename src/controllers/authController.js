@@ -77,7 +77,7 @@ const createUserWithGeneratedPlayNowId = async (userData, attempts = 3) => {
     try {
       return await User.create({
         ...userData,
-        playNowId: await generatePlayNowId()
+        playNowId: await generatePlayNowId('user')
       });
     } catch (error) {
       lastError = error;

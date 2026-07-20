@@ -12,7 +12,11 @@ const ENTITY_CONFIG = {
 
 const formatId = (prefix, sequence) => `${prefix}${String(sequence).padStart(6, '0')}`;
 
-const generatePlayNowId = async (entityType = 'user') => {
+const generatePlayNowId = async (entityType) => {
+  if (!entityType) {
+    throw new Error('entityType parameter is required for generatePlayNowId');
+  }
+
   const config = ENTITY_CONFIG[entityType];
   if (!config) {
     throw new Error(`Invalid entity type for ID generation: ${entityType}`);

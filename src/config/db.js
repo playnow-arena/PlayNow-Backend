@@ -18,6 +18,40 @@ const connectDB = async () => {
     const conn = await mongoose.connect(uri);
     console.log(`MongoDB Connected: ${conn.connection.host}`);
 
+    // Migration to safely remove the obsolete key_1 unique index and invalid documents
+    try {
+      const countersCol = conn.connection.db.collection('counters');
+      const indexes = await countersCol.indexes();
+      const hasKeyIndex = indexes.some(idx => idx.name === 'key_1');
+      if (hasKeyIndex) {
+        console.log('Found obsolete key_1 index on counters collection. Dropping it...');
+        await countersCol.dropIndex('key_1');
+        console.log('Successfully dropped key_1 index.');
+      }
+
+      const validKeys = [
+        'playnow_booking_id',
+        'playnow_owner_id',
+        'playnow_venue_id',
+        'playnow_payment_id',
+        'playnow_match_id',
+        'playnow_user_id'
+      ];
+
+      const deleteResult = await countersCol.deleteMany({
+        $or: [
+          { _id: { $type: 'null' } },
+          { _id: { $exists: false } },
+          { _id: { $nin: validKeys } }
+        ]
+      });
+      if (deleteResult.deletedCount > 0) {
+        console.log(`Cleaned up ${deleteResult.deletedCount} invalid/obsolete counter documents.`);
+      }
+    } catch (migError) {
+      console.error('Migration failed during database connection setup:', migError);
+    }
+
     // Seed admin and owner if using memory server
     if (uri.includes('localhost') || uri.includes('127.0.0.1')) {
       console.log('Seeding initial admin and owner accounts...');
@@ -28,7 +62,7 @@ const connectDB = async () => {
           name: 'Super Admin',
           phone: '+919999999999',
           role: 'admin',
-          playNowId: await generatePlayNowId()
+          playNowId: await generatePlayNowId('user')
         });
       }
 
@@ -38,7 +72,7 @@ const connectDB = async () => {
           name: 'Test Venue Owner',
           phone: '+918888888888',
           role: 'owner',
-          playNowId: await generatePlayNowId(),
+          playNowId: await generatePlayNowId('user'),
           ownerId: 'OWNER123'
         });
       }
