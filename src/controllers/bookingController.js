@@ -172,7 +172,7 @@ const createBooking = async (req, res) => {
     await createNotification({
       userId: req.user._id,
       title: 'Payment Successful',
-      message: `Your payment of â‚¹${paidAmount} for ${venue.name} was successful.`,
+      message: `Your payment of ₹${paidAmount} for ${venue.name} was successful.`,
       type: 'booking',
       link: '/dashboard',
       metadata: { bookingId: booking._id, venueId, amount: paidAmount, ...eventPayload },
