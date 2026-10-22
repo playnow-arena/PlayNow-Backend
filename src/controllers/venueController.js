@@ -355,39 +355,45 @@ const getFeaturedVenues = async (req, res) => {
       return res.json(venues);
     }
 
-    const fetchByDist = async (km) => Venue.find({
-      geo: {
-        $near: {
-          $geometry: { type: 'Point', coordinates: [longitude, latitude] },
-          $maxDistance: km * 1000
-        }
-      },
-      isActive: true
-    });
+    try {
+      const fetchByDist = async (km) => Venue.find({
+        geo: {
+          $near: {
+            $geometry: { type: 'Point', coordinates: [longitude, latitude] },
+            $maxDistance: km * 1000
+          }
+        },
+        isActive: true
+      });
 
-    let venues = await fetchByDist(5);
-    
-    const addUnique = (existing, newVenues) => {
-      const ids = new Set(existing.map(v => v._id.toString()));
-      return [...existing, ...newVenues.filter(v => !ids.has(v._id.toString()))];
-    };
+      let venues = await fetchByDist(5);
+      
+      const addUnique = (existing, newVenues) => {
+        const ids = new Set(existing.map(v => v._id.toString()));
+        return [...existing, ...newVenues.filter(v => !ids.has(v._id.toString()))];
+      };
 
-    if (venues.length < 6) {
-      const more = await fetchByDist(10);
-      venues = addUnique(venues, more);
+      if (venues.length < 6) {
+        const more = await fetchByDist(10);
+        venues = addUnique(venues, more);
+      }
+      if (venues.length < 6) {
+        const more = await fetchByDist(20);
+        venues = addUnique(venues, more);
+      }
+      if (venues.length < 6) {
+        const all = await Venue.find({ isActive: true }).limit(10);
+        venues = addUnique(venues, all);
+      }
+      
+      return res.json(venues.slice(0, 6));
+    } catch (geoError) {
+      const venues = await Venue.find({ isActive: true }).limit(6);
+      return res.json(venues);
     }
-    if (venues.length < 6) {
-      const more = await fetchByDist(20);
-      venues = addUnique(venues, more);
-    }
-    if (venues.length < 6) {
-      const all = await Venue.find({ isActive: true }).limit(10);
-      venues = addUnique(venues, all);
-    }
-    
-    res.json(venues.slice(0, 6));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const venues = await Venue.find({ isActive: true }).limit(6);
+    res.json(venues);
   }
 };
 

@@ -76,14 +76,12 @@ const findExistingOwnerApplicant = async (ownerRequest) => {
   return User.findOne({ phone: { $in: phoneValues } });
 };
 
-// Updates the user's contact info from the request form.
+// Updates the user's name if missing.
+// Preserves existing _id, playNowId, phone, email, password hash, and profile.
+// NEVER overwrites existing phone or email to prevent E11000 duplicate key errors.
 // DOES NOT change the user's role — role is managed exclusively by syncOwnerRole.
 const updateUserProfileFromRequest = async (user, ownerRequest) => {
   user.name = user.name || ownerRequest.ownerName;
-  user.phone = user.phone || ownerRequest.phone;
-  if (!user.email && ownerRequest.email) {
-    user.email = ownerRequest.email;
-  }
   await user.save();
   return user;
 };
@@ -254,8 +252,8 @@ const approveOwnerRequest = async (req, res) => {
       return res.status(404).json({ message: 'Owner request not found' });
     }
 
-    if (ownerRequest.status !== 'pending') {
-      return res.status(400).json({ message: `Owner request is already ${ownerRequest.status}` });
+    if (ownerRequest.status === 'rejected') {
+      return res.status(400).json({ message: 'Owner request is already rejected' });
     }
 
     let owner = await findExistingOwnerApplicant(ownerRequest);
@@ -264,13 +262,19 @@ const approveOwnerRequest = async (req, res) => {
       return res.status(404).json({ message: 'User not found for this owner request' });
     }
 
-    // Sync contact info only — role is NOT changed here
+    // Sync contact info only — role is NOT changed here, phone/email preserved
     owner = await updateUserProfileFromRequest(owner, ownerRequest);
 
-    // Create the venue first — role is determined by actual venue ownership
-    const venue = await Venue.create(buildVenuePayload(ownerRequest, owner._id));
+    // Ensure venue exists and is linked (prevents duplicates on repeat approval)
+    let venue = ownerRequest.linkedVenueId ? await Venue.findById(ownerRequest.linkedVenueId) : null;
+    if (!venue) {
+      venue = await Venue.findOne({ ownerId: owner._id, name: ownerRequest.venueName });
+    }
+    if (!venue) {
+      venue = await Venue.create(buildVenuePayload(ownerRequest, owner._id));
+    }
 
-    // NOW sync the role: venue exists, so syncOwnerRole will promote to 'owner'
+    // Synchronize role: venue exists, so syncOwnerRole promotes to 'owner'
     await syncOwnerRole(owner._id);
 
     // Assign ownerCode only after confirmed as owner
@@ -282,7 +286,7 @@ const approveOwnerRequest = async (req, res) => {
 
     ownerRequest.status = 'approved';
     ownerRequest.reviewedBy = req.user._id;
-    ownerRequest.reviewedAt = new Date();
+    ownerRequest.reviewedAt = ownerRequest.reviewedAt || new Date();
     ownerRequest.linkedUserId = owner._id;
     ownerRequest.linkedVenueId = venue._id;
     ownerRequest.rejectionReason = undefined;
