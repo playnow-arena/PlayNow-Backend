@@ -16,10 +16,18 @@ const matchSchema = new mongoose.Schema({
     ref: 'User',
   }],
   totalAmount: { type: Number, required: true },
+  contactPhone: {
+    type: String,
+    required: true,
+  },
   status: {
     type: String,
-    enum: ['open', 'full', 'cancelled'],
+    enum: ['open', 'full', 'started', 'cancelled'],
     default: 'open',
+  },
+  startedAt: {
+    type: Date,
+    default: null,
   },
   matchCode: {
     type: String,
