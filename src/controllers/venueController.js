@@ -38,6 +38,20 @@ const normalizeVenuePayload = (body = {}) => {
     }));
   }
 
+  const rawLat = payload.coordinates?.lat ?? payload.latitude;
+  const rawLng = payload.coordinates?.lng ?? payload.longitude;
+  const lat = rawLat !== undefined && rawLat !== '' ? Number(rawLat) : undefined;
+  const lng = rawLng !== undefined && rawLng !== '' ? Number(rawLng) : undefined;
+  if (Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180) {
+    payload.coordinates = { lat, lng };
+    payload.geo = {
+      type: 'Point',
+      coordinates: [lng, lat]
+    };
+  } else if (!payload.geo || !Array.isArray(payload.geo.coordinates) || payload.geo.coordinates.length !== 2) {
+    delete payload.geo;
+  }
+
   return payload;
 };
 

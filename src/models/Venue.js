@@ -23,6 +23,18 @@ const contactSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const pointSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    enum: ['Point'],
+    default: 'Point'
+  },
+  coordinates: {
+    type: [Number],
+    required: true
+  }
+}, { _id: false });
+
 const venueSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -59,18 +71,13 @@ const venueSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please add a full address']
   },
+  coordinates: {
+    lat: Number,
+    lng: Number
+  },
   geo: {
-    type: {
-      type: String,
-      enum: ['Point'],
-      required: true,
-      default: 'Point'
-    },
-    coordinates: {
-      type: [Number],
-      required: true,
-      index: '2dsphere'
-    }
+    type: pointSchema,
+    required: false
   },
   images: {
     type: [String],
@@ -135,5 +142,7 @@ const venueSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+venueSchema.index({ 'geo.coordinates': '2dsphere' }, { sparse: true });
 
 module.exports = mongoose.model('Venue', venueSchema);

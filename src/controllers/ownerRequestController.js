@@ -134,16 +134,27 @@ const normalizeCourtGroups = (courtGroups) => {
     .filter((group) => group.name && group.sports.length > 0 && Number.isFinite(group.pricePerHour));
 };
 
-const buildVenuePayload = (request, ownerId) => ({
-  name: request.venueName,
-  ownerId,
-  sportTypes: normalizeSportTypes(request.sportTypes).length ? normalizeSportTypes(request.sportTypes) : ['Badminton'],
-  location: request.location || request.address,
-  city: request.city,
-  area: request.area,
-  landmark: request.landmark,
-  coordinates: request.coordinates,
-  address: request.address,
+const buildVenuePayload = (request, ownerId) => {
+  const lat = request.coordinates?.lat !== undefined && request.coordinates?.lat !== '' ? Number(request.coordinates.lat) : undefined;
+  const lng = request.coordinates?.lng !== undefined && request.coordinates?.lng !== '' ? Number(request.coordinates.lng) : undefined;
+  const hasValidCoordinates = Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180;
+
+  return {
+    name: request.venueName,
+    ownerId,
+    sportTypes: normalizeSportTypes(request.sportTypes).length ? normalizeSportTypes(request.sportTypes) : ['Badminton'],
+    location: request.location || request.address,
+    city: request.city,
+    area: request.area,
+    landmark: request.landmark,
+    ...(hasValidCoordinates ? {
+      coordinates: { lat, lng },
+      geo: {
+        type: 'Point',
+        coordinates: [lng, lat]
+      }
+    } : {}),
+    address: request.address,
   pricePerHour: Number(request.pricePerHour || 0),
   amenities: request.amenities || [],
   description: request.description || 'A premium sports venue for athletes.',
@@ -151,7 +162,8 @@ const buildVenuePayload = (request, ownerId) => ({
   contacts: request.contacts,
   courtGroups: request.courtGroups || [],
   isActive: true
-});
+  };
+};
 
 // @desc    Submit owner onboarding request
 // @route   POST /api/owner-requests
