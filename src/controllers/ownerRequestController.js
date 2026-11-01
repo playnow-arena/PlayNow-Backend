@@ -90,13 +90,15 @@ const normalizeOptionalString = (value) => (
   typeof value === 'string' ? value.trim() : ''
 );
 
-const normalizeCoordinates = (coordinates = {}) => {
-  const lat = coordinates.lat !== undefined && coordinates.lat !== '' ? Number(coordinates.lat) : undefined;
-  const lng = coordinates.lng !== undefined && coordinates.lng !== '' ? Number(coordinates.lng) : undefined;
+const normalizeCoordinates = (coordinates = {}, fallbackLat, fallbackLng) => {
+  const rawLat = coordinates?.lat ?? coordinates?.latitude ?? fallbackLat;
+  const rawLng = coordinates?.lng ?? coordinates?.longitude ?? fallbackLng;
+  const lat = rawLat !== undefined && rawLat !== '' ? Number(rawLat) : undefined;
+  const lng = rawLng !== undefined && rawLng !== '' ? Number(rawLng) : undefined;
 
   return {
-    ...(Number.isFinite(lat) ? { lat } : {}),
-    ...(Number.isFinite(lng) ? { lng } : {})
+    ...(Number.isFinite(lat) && lat >= -90 && lat <= 90 ? { lat } : {}),
+    ...(Number.isFinite(lng) && lng >= -180 && lng <= 180 ? { lng } : {})
   };
 };
 
@@ -168,6 +170,8 @@ const createOwnerRequest = async (req, res) => {
       area,
       landmark,
       coordinates,
+      latitude,
+      longitude,
       contacts,
       courtGroups,
       pricePerHour,
@@ -177,6 +181,17 @@ const createOwnerRequest = async (req, res) => {
 
     if (!ownerName || !phone || !venueName || !address) {
       return res.status(400).json({ message: 'ownerName, phone, venueName, and address are required' });
+    }
+
+    const checkLat = coordinates?.lat ?? coordinates?.latitude ?? latitude;
+    const checkLng = coordinates?.lng ?? coordinates?.longitude ?? longitude;
+
+    if (checkLat !== undefined && checkLat !== '' && (isNaN(Number(checkLat)) || Number(checkLat) < -90 || Number(checkLat) > 90)) {
+      return res.status(400).json({ message: 'Latitude must be a valid number between -90 and 90' });
+    }
+
+    if (checkLng !== undefined && checkLng !== '' && (isNaN(Number(checkLng)) || Number(checkLng) < -180 || Number(checkLng) > 180)) {
+      return res.status(400).json({ message: 'Longitude must be a valid number between -180 and 180' });
     }
 
     const normalizedPhone = normalizePhone(phone);
@@ -195,7 +210,7 @@ const createOwnerRequest = async (req, res) => {
       city: city ? city.trim() : undefined,
       area: area ? area.trim() : undefined,
       landmark: landmark ? landmark.trim() : undefined,
-      coordinates: normalizeCoordinates(coordinates),
+      coordinates: normalizeCoordinates(coordinates, latitude, longitude),
       pricePerHour: pricePerHour !== undefined && pricePerHour !== '' ? Number(pricePerHour) : undefined,
       amenities: normalizeList(amenities),
       description: description ? description.trim() : undefined,
