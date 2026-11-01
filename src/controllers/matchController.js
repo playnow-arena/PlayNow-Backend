@@ -252,6 +252,110 @@ const cancelMatch = async (req, res) => {
   }
 };
 
+// @desc    Admin: Get all matches with optional status & sport filters
+// @route   GET /api/matches/admin
+// @access  Private (Admin only)
+const getAdminMatches = async (req, res) => {
+  try {
+    const { status, sport } = req.query;
+    const query = {};
+
+    if (status) {
+      query.status = status;
+    }
+
+    if (sport) {
+      query.sport = { $regex: new RegExp(sport, 'i') };
+    }
+
+    const matches = await Match.find(query)
+      .populate('host', 'name phone playNowId email')
+      .populate('joinedPlayers', 'name phone playNowId email')
+      .sort({ createdAt: -1 });
+
+    res.json(matches);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Admin: Update match status / cancel / close match
+// @route   PATCH /api/matches/admin/:id/status
+// @access  Private (Admin only)
+const adminUpdateMatchStatus = async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowedStatuses = ['open', 'full', 'started', 'cancelled'];
+
+    if (!status || !allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        message: `Invalid status. Allowed statuses: ${allowedStatuses.join(', ')}`
+      });
+    }
+
+    const match = await Match.findById(req.params.id);
+
+    if (!match) {
+      return res.status(404).json({ message: 'Match not found' });
+    }
+
+    const previousStatus = match.status;
+    match.status = status;
+
+    if (status === 'started' && !match.startedAt) {
+      match.startedAt = new Date();
+    }
+
+    await match.save();
+
+    // If cancelled by admin, notify joined players
+    if (status === 'cancelled' && previousStatus !== 'cancelled') {
+      const { createNotification } = require('./notificationController');
+      await Promise.all(match.joinedPlayers.map(playerId => createNotification({
+        userId: playerId,
+        title: 'Match Cancelled by Admin',
+        message: `The ${match.sport} match at ${match.venue} has been cancelled by the administrator.`,
+        type: 'match',
+        link: '/open-matches',
+        metadata: { matchId: match._id },
+        dedupeKey: `match:${match._id}:admin-cancelled:${playerId}`
+      })));
+    }
+
+    await match.populate('host', 'name phone playNowId email');
+    await match.populate('joinedPlayers', 'name phone playNowId email');
+
+    res.json({
+      message: `Match status updated to ${status} successfully`,
+      match
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Admin: Permanently delete a match record
+// @route   DELETE /api/matches/admin/:id
+// @access  Private (Admin only)
+const adminDeleteMatch = async (req, res) => {
+  try {
+    const match = await Match.findById(req.params.id);
+
+    if (!match) {
+      return res.status(404).json({ message: 'Match not found' });
+    }
+
+    await Match.findByIdAndDelete(req.params.id);
+
+    res.json({
+      message: 'Match permanently deleted successfully',
+      matchId: req.params.id
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   createMatch,
   getMatches,
@@ -259,4 +363,7 @@ module.exports = {
   joinMatch,
   startMatch,
   cancelMatch,
+  getAdminMatches,
+  adminUpdateMatchStatus,
+  adminDeleteMatch,
 };
