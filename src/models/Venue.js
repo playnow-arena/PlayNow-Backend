@@ -31,7 +31,15 @@ const pointSchema = new mongoose.Schema({
   },
   coordinates: {
     type: [Number],
-    required: true
+    required: [true, 'Coordinates are required when geo is provided'],
+    validate: {
+      validator: function (val) {
+        return Array.isArray(val) && val.length === 2 &&
+          Number.isFinite(val[0]) && val[0] >= -180 && val[0] <= 180 &&
+          Number.isFinite(val[1]) && val[1] >= -90 && val[1] <= 90;
+      },
+      message: 'Coordinates must be valid [longitude, latitude]'
+    }
   }
 }, { _id: false });
 
@@ -77,7 +85,8 @@ const venueSchema = new mongoose.Schema({
   },
   geo: {
     type: pointSchema,
-    required: false
+    required: false,
+    default: undefined
   },
   images: {
     type: [String],

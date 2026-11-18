@@ -49,11 +49,27 @@ const verifyPaymentSignature = ({ orderId, paymentId, signature }) => {
     && crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
 };
 
+const createRefund = async ({ paymentId, amount, notes = {} }) => {
+  const client = getClient();
+  const options = { notes };
+  if (amount !== undefined && amount !== null) {
+    options.amount = Math.round(Number(amount) * 100);
+  }
+  return client.payments.refund(paymentId, options);
+};
+
+const getRefund = async (refundId) => {
+  const client = getClient();
+  return client.refunds.fetch(refundId);
+};
+
 const getPublicKeyId = () => getCredentials().keyId;
 
 module.exports = {
   createOrder,
   getPayment,
+  createRefund,
+  getRefund,
   verifyPaymentSignature,
   getPublicKeyId
 };

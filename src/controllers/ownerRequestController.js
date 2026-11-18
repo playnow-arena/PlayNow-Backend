@@ -135,34 +135,39 @@ const normalizeCourtGroups = (courtGroups) => {
 };
 
 const buildVenuePayload = (request, ownerId) => {
-  const lat = request.coordinates?.lat !== undefined && request.coordinates?.lat !== '' ? Number(request.coordinates.lat) : undefined;
-  const lng = request.coordinates?.lng !== undefined && request.coordinates?.lng !== '' ? Number(request.coordinates.lng) : undefined;
+  const rawLat = request.coordinates?.lat ?? request.latitude;
+  const rawLng = request.coordinates?.lng ?? request.longitude;
+  const lat = rawLat !== undefined && rawLat !== '' && rawLat !== null ? Number(rawLat) : undefined;
+  const lng = rawLng !== undefined && rawLng !== '' && rawLng !== null ? Number(rawLng) : undefined;
   const hasValidCoordinates = Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180;
 
-  return {
+  const payload = {
     name: request.venueName,
     ownerId,
     sportTypes: normalizeSportTypes(request.sportTypes).length ? normalizeSportTypes(request.sportTypes) : ['Badminton'],
     location: request.location || request.address,
-    city: request.city,
-    area: request.area,
-    landmark: request.landmark,
-    ...(hasValidCoordinates ? {
-      coordinates: { lat, lng },
-      geo: {
-        type: 'Point',
-        coordinates: [lng, lat]
-      }
-    } : {}),
+    city: request.city || '',
+    area: request.area || '',
+    landmark: request.landmark || '',
     address: request.address,
-  pricePerHour: Number(request.pricePerHour || 0),
-  amenities: request.amenities || [],
-  description: request.description || 'A premium sports venue for athletes.',
-  images: request.venuePhotos?.length ? request.venuePhotos : ['default-venue.jpg'],
-  contacts: request.contacts,
-  courtGroups: request.courtGroups || [],
-  isActive: true
+    pricePerHour: Number(request.pricePerHour || 0),
+    amenities: request.amenities || [],
+    description: request.description || 'A premium sports venue for athletes.',
+    images: request.venuePhotos?.length ? request.venuePhotos : ['default-venue.jpg'],
+    contacts: request.contacts,
+    courtGroups: request.courtGroups || [],
+    isActive: true
   };
+
+  if (hasValidCoordinates) {
+    payload.coordinates = { lat, lng };
+    payload.geo = {
+      type: 'Point',
+      coordinates: [lng, lat]
+    };
+  }
+
+  return payload;
 };
 
 // @desc    Submit owner onboarding request
@@ -374,5 +379,6 @@ module.exports = {
   createOwnerRequest,
   getOwnerRequests,
   approveOwnerRequest,
-  rejectOwnerRequest
+  rejectOwnerRequest,
+  buildVenuePayload
 };

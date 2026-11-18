@@ -1,8 +1,28 @@
 const Notification = require('./models/Notification');
 const Match = require('./models/Match');
+const { recoverOrphanedSlots } = require('./utils/slotRecoveryService');
+const { recoverCancelledBookings } = require('./utils/cancellationRecoveryService');
 
 // Runs daily (every 24 hours) to delete notifications older than 90 days
 const initAutoCleanup = () => {
+  let recoveryRunning = false;
+  const bookingRecoveryJob = async () => {
+    if (recoveryRunning) return;
+    recoveryRunning = true;
+    try {
+      await recoverOrphanedSlots();
+      await recoverCancelledBookings();
+    } catch (err) {
+      console.error('❌ [CLEANUP] Booking recovery failed:', err.message);
+    } finally {
+      recoveryRunning = false;
+    }
+  };
+
+  bookingRecoveryJob();
+  setInterval(bookingRecoveryJob, 60 * 1000);
+  console.log('⏰ [CLEANUP] Booking and slot recovery scheduled (runs every 60 seconds).');
+
   // --- Existing: Notification cleanup ---
   const notificationCleanupJob = async () => {
     try {

@@ -43,6 +43,10 @@ const slotSchema = new mongoose.Schema({
   blockReason: {
     type: String,
     default: ''
+  },
+  claimToken: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true

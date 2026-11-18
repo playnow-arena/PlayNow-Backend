@@ -2,6 +2,7 @@ const Venue = require('../models/Venue');
 const User = require('../models/User');
 const generatePlayNowId = require('../utils/generatePlayNowId');
 const syncOwnerRole = require('../utils/syncOwnerRole');
+const VenueDeletionRequest = require('../models/VenueDeletionRequest');
 
 const toList = (value) => (Array.isArray(value) ? value : String(value || '').split(','))
   .map((item) => item.trim())
@@ -38,17 +39,47 @@ const normalizeVenuePayload = (body = {}) => {
     }));
   }
 
-  const rawLat = payload.coordinates?.lat ?? payload.latitude;
-  const rawLng = payload.coordinates?.lng ?? payload.longitude;
-  const lat = rawLat !== undefined && rawLat !== '' ? Number(rawLat) : undefined;
-  const lng = rawLng !== undefined && rawLng !== '' ? Number(rawLng) : undefined;
-  if (Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180) {
-    payload.coordinates = { lat, lng };
-    payload.geo = {
-      type: 'Point',
-      coordinates: [lng, lat]
-    };
-  } else if (!payload.geo || !Array.isArray(payload.geo.coordinates) || payload.geo.coordinates.length !== 2) {
+  const hasCoordsField = payload.coordinates !== undefined || payload.latitude !== undefined || payload.longitude !== undefined;
+  const hasGeoField = payload.geo !== undefined;
+
+  if (hasCoordsField || hasGeoField) {
+    let lat;
+    let lng;
+
+    if (hasCoordsField) {
+      const rawLat = payload.coordinates?.lat ?? payload.latitude;
+      const rawLng = payload.coordinates?.lng ?? payload.longitude;
+      lat = rawLat !== undefined && rawLat !== '' && rawLat !== null ? Number(rawLat) : undefined;
+      lng = rawLng !== undefined && rawLng !== '' && rawLng !== null ? Number(rawLng) : undefined;
+    } else if (hasGeoField && Array.isArray(payload.geo?.coordinates)) {
+      lng = payload.geo.coordinates[0] !== undefined && payload.geo.coordinates[0] !== '' && payload.geo.coordinates[0] !== null ? Number(payload.geo.coordinates[0]) : undefined;
+      lat = payload.geo.coordinates[1] !== undefined && payload.geo.coordinates[1] !== '' && payload.geo.coordinates[1] !== null ? Number(payload.geo.coordinates[1]) : undefined;
+    }
+
+    const latProvided = lat !== undefined;
+    const lngProvided = lng !== undefined;
+
+    if (latProvided || lngProvided) {
+      const isValidLat = Number.isFinite(lat) && lat >= -90 && lat <= 90;
+      const isValidLng = Number.isFinite(lng) && lng >= -180 && lng <= 180;
+
+      if (!isValidLat || !isValidLng) {
+        const error = new Error('Invalid coordinates: latitude must be between -90 and 90, longitude between -180 and 180');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      payload.coordinates = { lat, lng };
+      payload.geo = {
+        type: 'Point',
+        coordinates: [lng, lat]
+      };
+    } else {
+      delete payload.coordinates;
+      delete payload.geo;
+    }
+  } else {
+    delete payload.coordinates;
     delete payload.geo;
   }
 
@@ -289,9 +320,27 @@ const updateVenue = async (req, res) => {
     if (req.user.role === 'admin') {
       payload.ownerId = await resolveVenueOwnerId(req, payload, venue);
     } else {
+      // Phase 4 fix: prevent non-admin owners from toggling isActive directly.
+      // Active-state transitions are managed by the deletion-request workflow only.
       delete payload.ownerId;
+      delete payload.isActive;
     }
     stripOwnerSelectionFields(payload);
+
+    // Phase 4 fix: block owner edits while a deletion request is pending.
+    // Admins can always manage venues regardless of pending-request state.
+    if (req.user.role !== 'admin') {
+      const pendingDeletion = await VenueDeletionRequest.findOne({
+        venueId: req.params.id,
+        status: 'pending'
+      });
+      if (pendingDeletion) {
+        return res.status(409).json({
+          message: 'Cannot edit this venue while a deletion request is pending. ' +
+                   'Wait for admin review or contact support.'
+        });
+      }
+    }
 
     venue = await Venue.findByIdAndUpdate(req.params.id, payload, {
       new: true,
@@ -303,6 +352,8 @@ const updateVenue = async (req, res) => {
     if (oldOwnerId.toString() !== newOwnerId.toString()) {
       await syncOwnerRole(oldOwnerId); // may demote old owner if no remaining venues
       await syncOwnerRole(newOwnerId); // may promote new owner if this is their first venue
+    } else {
+      await syncOwnerRole(newOwnerId); // sync role in case active status changed
     }
 
     res.json(venue);
@@ -322,9 +373,9 @@ const deleteVenue = async (req, res) => {
       return res.status(404).json({ message: 'Venue not found' });
     }
 
-    // Make sure user is venue owner or admin
-    if (venue.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Not authorized to delete this venue' });
+    // Make sure user is admin (direct deletion by owners is disabled)
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Direct venue deletion by owners is disabled. Please submit a venue deletion request.' });
     }
 
     // Capture old owner BEFORE deletion for potential demotion
@@ -419,5 +470,6 @@ module.exports = {
   getMyVenues,
   createVenue,
   updateVenue,
-  deleteVenue
+  deleteVenue,
+  normalizeVenuePayload
 };

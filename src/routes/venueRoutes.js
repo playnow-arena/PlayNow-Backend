@@ -26,6 +26,6 @@ router.route('/my')
 router.route('/:id')
   .get(getVenueById)
   .put(protect, authorizeRoles('owner', 'admin'), updateVenue)
-  .delete(protect, authorizeRoles('owner', 'admin'), deleteVenue);
+  .delete(protect, authorizeRoles('admin'), deleteVenue);
 
 module.exports = router;

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Slot = require('../models/Slot');
 const Venue = require('../models/Venue');
 const { getIO } = require('../socket');
@@ -20,6 +21,20 @@ const getSlotsByVenue = async (req, res) => {
     const { date } = req.query;
     let query = { venueId: req.params.venueId };
     
+    // Clean up any expired locks for this venue so they don't block users
+    const now = new Date();
+    await Slot.updateMany(
+      {
+        venueId: req.params.venueId,
+        status: 'locked',
+        lockExpiresAt: { $lte: now }
+      },
+      {
+        $set: { status: 'available' },
+        $unset: { lockedBy: '', lockExpiresAt: '' }
+      }
+    );
+
     if (date) {
       const startDate = new Date(date);
       startDate.setUTCHours(0,0,0,0);
@@ -45,6 +60,10 @@ const createSlots = async (req, res) => {
     const venue = await Venue.findById(venueId);
     if (!venue) {
       return res.status(404).json({ message: 'Venue not found' });
+    }
+
+    if (!venue.isActive) {
+      return res.status(400).json({ message: 'Cannot create slots for an inactive venue' });
     }
 
     if (!canManageVenue(venue, req.user)) {
@@ -100,6 +119,10 @@ const generateSlots = async (req, res) => {
     const venue = await Venue.findById(venueId);
     if (!venue) {
       return res.status(404).json({ message: 'Venue not found' });
+    }
+
+    if (!venue.isActive) {
+      return res.status(400).json({ message: 'Cannot create slots for an inactive venue' });
     }
 
     if (!canManageVenue(venue, req.user)) {
@@ -269,50 +292,119 @@ const lockSlots = async (req, res) => {
   try {
     const { slotIds, venueId } = req.body;
 
-    if (!slotIds || slotIds.length === 0) {
+    if (!venueId) {
+      return res.status(400).json({ message: 'Venue ID is required' });
+    }
+
+    if (!Array.isArray(slotIds) || slotIds.length === 0) {
       return res.status(400).json({ message: 'No slots provided' });
     }
 
-    // Check if slots are available
-    const slots = await Slot.find({ _id: { $in: slotIds }, status: 'available' });
-    if (slots.length !== slotIds.length) {
-      return res.status(400).json({ message: 'One or more slots are no longer available' });
+    if (!mongoose.Types.ObjectId.isValid(venueId)) {
+      return res.status(400).json({ message: 'Invalid venue ID' });
     }
 
-    // Update to 'locked'
-    await Slot.updateMany(
-      { _id: { $in: slotIds } },
+    const venue = await Venue.findById(venueId);
+    if (!venue) {
+      return res.status(404).json({ message: 'Venue not found' });
+    }
+    if (!venue.isActive) {
+      return res.status(400).json({ message: 'Venue is inactive and not accepting bookings' });
+    }
+
+    const uniqueSlotIds = [...new Set(slotIds.map(id => id.toString()))];
+    for (const id of uniqueSlotIds) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: 'Invalid slot ID' });
+      }
+    }
+
+    const slots = await Slot.find({ _id: { $in: uniqueSlotIds } });
+    if (slots.length !== uniqueSlotIds.length) {
+      return res.status(400).json({ message: 'One or more slots do not exist' });
+    }
+
+    const foreignSlot = slots.find(s => s.venueId.toString() !== venue._id.toString());
+    if (foreignSlot) {
+      return res.status(400).json({ message: 'One or more slots do not belong to the selected venue' });
+    }
+
+    const now = new Date();
+    const lockExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    // Atomic update: only lock slots that are:
+    // 1) available, OR
+    // 2) already locked by current user, OR
+    // 3) locked but lock has expired
+    // NEVER lock booked or blocked slots!
+    const lockCondition = {
+      _id: { $in: uniqueSlotIds },
+      venueId: venue._id,
+      $or: [
+        { status: 'available' },
+        { status: 'locked', lockedBy: req.user._id },
+        { status: 'locked', lockExpiresAt: { $lte: now } }
+      ]
+    };
+
+    const updateResult = await Slot.updateMany(
+      lockCondition,
       {
         $set: {
           status: 'locked',
           lockedBy: req.user._id,
-          lockExpiresAt: new Date(Date.now() + 15 * 60 * 1000)
+          lockExpiresAt
         }
       }
     );
 
+    if (updateResult.matchedCount !== uniqueSlotIds.length) {
+      // Revert only slots that this user locked in this attempt
+      await Slot.updateMany(
+        {
+          _id: { $in: uniqueSlotIds },
+          venueId: venue._id,
+          lockedBy: req.user._id,
+          lockExpiresAt
+        },
+        {
+          $set: { status: 'available' },
+          $unset: { lockedBy: '', lockExpiresAt: '' }
+        }
+      );
+      return res.status(400).json({ message: 'One or more slots are no longer available' });
+    }
+
     // Emit real-time update
     const io = getIO();
-    io.to(`venue_${venueId}`).emit('slotStatusChanged', { slotIds, status: 'locked' });
+    if (io) {
+      io.to(`venue_${venueId}`).emit('slotStatusChanged', { slotIds: uniqueSlotIds, status: 'locked' });
+    }
 
-    // Set timeout to auto-unlock after the checkout window.
+    // Set timeout to auto-unlock after checkout window
     setTimeout(async () => {
-      const stillLockedSlots = await Slot.find({
-        _id: { $in: slotIds },
-        status: 'locked',
-        lockedBy: req.user._id,
-        lockExpiresAt: { $lte: new Date() }
-      });
-      if (stillLockedSlots.length > 0) {
-        const stillLockedIds = stillLockedSlots.map(s => s._id);
-        await Slot.updateMany(
-          { _id: { $in: stillLockedIds } },
-          {
-            $set: { status: 'available' },
-            $unset: { lockedBy: '', lockExpiresAt: '' }
+      try {
+        const stillLockedSlots = await Slot.find({
+          _id: { $in: uniqueSlotIds },
+          status: 'locked',
+          lockedBy: req.user._id,
+          lockExpiresAt: { $lte: new Date() }
+        });
+        if (stillLockedSlots.length > 0) {
+          const stillLockedIds = stillLockedSlots.map(s => s._id);
+          await Slot.updateMany(
+            { _id: { $in: stillLockedIds } },
+            {
+              $set: { status: 'available' },
+              $unset: { lockedBy: '', lockExpiresAt: '' }
+            }
+          );
+          if (io) {
+            io.to(`venue_${venueId}`).emit('slotStatusChanged', { slotIds: stillLockedIds, status: 'available' });
           }
-        );
-        io.to(`venue_${venueId}`).emit('slotStatusChanged', { slotIds: stillLockedIds, status: 'available' });
+        }
+      } catch (err) {
+        // Safe timeout catch
       }
     }, 15 * 60 * 1000);
 
@@ -329,8 +421,14 @@ const unlockSlots = async (req, res) => {
   try {
     const { slotIds, venueId } = req.body;
 
+    if (!Array.isArray(slotIds) || slotIds.length === 0) {
+      return res.json({ message: 'Slots unlocked' });
+    }
+
+    const uniqueSlotIds = [...new Set(slotIds.map(id => id.toString()))];
+
     await Slot.updateMany(
-      { _id: { $in: slotIds }, status: 'locked', lockedBy: req.user._id },
+      { _id: { $in: uniqueSlotIds }, status: 'locked', lockedBy: req.user._id },
       {
         $set: { status: 'available' },
         $unset: { lockedBy: '', lockExpiresAt: '' }
@@ -338,7 +436,9 @@ const unlockSlots = async (req, res) => {
     );
 
     const io = getIO();
-    io.to(`venue_${venueId}`).emit('slotStatusChanged', { slotIds, status: 'available' });
+    if (io && venueId) {
+      io.to(`venue_${venueId}`).emit('slotStatusChanged', { slotIds: uniqueSlotIds, status: 'available' });
+    }
 
     res.json({ message: 'Slots unlocked' });
   } catch (error) {

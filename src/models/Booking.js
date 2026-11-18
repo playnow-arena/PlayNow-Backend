@@ -44,8 +44,13 @@ const bookingSchema = new mongoose.Schema({
   },
   paymentStatus: {
     type: String,
-    enum: ['pending', 'advance_paid', 'completed', 'refunded'],
+    enum: ['pending', 'advance_paid', 'completed', 'refund_pending', 'refund_processing', 'refunded'],
     default: 'pending'
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['online', 'cash', 'walkin'],
+    default: 'online'
   },
   razorpayOrderId: {
     type: String,
@@ -55,6 +60,10 @@ const bookingSchema = new mongoose.Schema({
   razorpayPaymentId: {
     type: String,
     unique: true,
+    sparse: true
+  },
+  razorpayRefundId: {
+    type: String,
     sparse: true
   },
   cancellationFee: {

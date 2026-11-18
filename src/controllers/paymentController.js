@@ -352,23 +352,15 @@ const verifyRazorpayPayment = async (req, res) => {
       return res.status(400).json({ message: 'Payment verification details are required' });
     }
 
-    intent = req.user?._id
-      ? await PaymentIntent.findOne({ razorpayOrderId, userId: req.user._id })
-      : null;
-    if (!intent) {
-      const signatureIsValid = razorpayService.verifyPaymentSignature({
-        orderId: razorpayOrderId,
-        paymentId: razorpayPaymentId,
-        signature: razorpaySignature
-      });
-      if (!signatureIsValid) {
-        return res.status(400).json({ success: false, message: 'Payment signature verification failed' });
-      }
+    if (!req.user?._id) {
+      return res.status(401).json({ message: 'Authentication required for payment verification' });
+    }
 
-      return res.json({
-        success: true,
-        razorpay_order_id: razorpayOrderId,
-        razorpay_payment_id: razorpayPaymentId
+    intent = await PaymentIntent.findOne({ razorpayOrderId, userId: req.user._id });
+    if (!intent) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payment intent not found or does not belong to the authenticated user'
       });
     }
 

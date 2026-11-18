@@ -37,6 +37,7 @@ app.use('/api/owner-requests', require('./src/routes/ownerRequestRoutes'));
 app.use('/api/recurring-block-rules', require('./src/routes/recurringBlockRuleRoutes'));
 app.use('/api/reviews', require('./src/routes/reviewRoutes'));
 app.use('/api/notifications', require('./src/routes/notificationRoutes'));
+app.use('/api/venue-deletion-requests', require('./src/routes/venueDeletionRequestRoutes'));
 
 
 app.get('/', (req, res) => {
